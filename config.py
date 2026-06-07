@@ -1,14 +1,4 @@
-# Telegram Bot Token (BotFather က ပေးတဲ့ token ဒီမှာ ထည့်ပါ)
-BOT_TOKEN ="8614528420:AAFyAx7nPpZPLFSW3jwJ6xzsPvFPyagLSj8"
-
-# OpenChargeMap API Key (နောက်မှ ဖြည့်ပါ)
-OCM_API_KEY =
-
-# Charge station search radius (km)
-SEARCH_RADIUS_KM = 10
-
-# Charge cost per kWh (Ks)
+BOT_TOKEN = "8786662044:AAEyAqYz8MFHM-1e3-TsbwymWB-MgGBjNgM"
+OCM_API_KEY = ""
 COST_PER_KWH = 350
-
-# Low battery alert threshold (%)
 LOW_BATTERY_ALERT = 20
