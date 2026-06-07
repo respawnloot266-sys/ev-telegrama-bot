@@ -2,7 +2,7 @@
 BOT_TOKEN ="8614528420:AAFyAx7nPpZPLFSW3jwJ6xzsPvFPyagLSj8"
 
 # OpenChargeMap API Key (နောက်မှ ဖြည့်ပါ)
-OCM_API_KEY = "နောက်မှ_ဖြည့်ပါ"
+OCM_API_KEY =
 
 # Charge station search radius (km)
 SEARCH_RADIUS_KM = 10
