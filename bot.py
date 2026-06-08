@@ -7,6 +7,7 @@ from telegram.ext import (
 )
 import database as db
 import charge_api
+import utils
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,69 +15,79 @@ logger = logging.getLogger(__name__)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPEN_CHARGE_MAP_API_KEY = os.getenv("OPEN_CHARGE_MAP_API_KEY")
 
-# --- Conversation States ---
-MODEL, CAP, RANGE, CHARGE_RATE = range(4)       # Registration
-PCT = range(1)                                    # Battery Update
-CHARGE_START_PCT, CHARGE_END_PCT = range(2)       # Charge Time
+# --- States ---
+CAR_NAME, MODEL, CAP, RANGE = range(4)
+PCT = range(1)
+CHARGE_START_PCT, CHARGE_END_PCT = range(2)
+LANG_SELECT = range(1)
 
-# --- ⚡ Charge Rate Database (ကားမော်ဒယ်အလိုက်) ---
+# --- Charge Rate DB ---
 CAR_CHARGE_RATES = {
-    "tesla model 3": 250,
-    "tesla model y": 250,
-    "tesla model s": 200,
-    "tesla model x": 200,
-    "nissan leaf": 50,
-    "hyundai ioniq 5": 220,
-    "hyundai ioniq 6": 230,
-    "kia ev6": 230,
-    "bmw i4": 200,
-    "volkswagen id.4": 135,
-    "audi e-tron": 150,
-    "chevrolet bolt": 55,
-    "rivian r1t": 200,
-    "ford mustang mach-e": 150,
+    "tesla model 3": 250, "tesla model y": 250,
+    "tesla model s": 200, "tesla model x": 200,
+    "nissan leaf": 50, "hyundai ioniq 5": 220,
+    "hyundai ioniq 6": 230, "kia ev6": 230,
+    "bmw i4": 200, "volkswagen id.4": 135,
+    "audi e-tron": 150, "chevrolet bolt": 55,
+    "ford mustang mach-e": 150, "toyota bz3x": 150,
+    "toyota bz4x": 150, "mg zs ev": 90,
 }
 
-def get_charge_rate(model: str) -> int:
-    """ကားမော်ဒယ်ပေါ်မူတည်ပြီး charge rate ရယူတယ်။"""
+def get_charge_rate(model):
     return CAR_CHARGE_RATES.get(model.lower().strip(), 50)
 
-def detect_charge_rate_message(model: str) -> str:
-    """ကားမော်ဒယ်ကို auto-detect လုပ်ပြီး rate message ပြတယ်။"""
-    rate = get_charge_rate(model)
-    if model.lower().strip() in CAR_CHARGE_RATES:
-        return f"⚡ <b>{model}</b> အတွက် Charge Rate: <b>{rate} kW</b> (Auto-detected)"
-    else:
-        return f"⚡ Charge Rate: <b>{rate} kW</b> (Default — မသိသောမော်ဒယ်)"
+def get_lang(uid):
+    return db.get_language(uid)
 
 # --- Main Menu ---
-def get_main_menu():
-    keyboard = [
-        [InlineKeyboardButton("🚗 Register Car", callback_data="reg_start"),
-         InlineKeyboardButton("🔋 Update Battery", callback_data="upd_start")],
-        [InlineKeyboardButton("📊 My Status", callback_data="stat"),
-         InlineKeyboardButton("📜 History", callback_data="hist")],
-        [InlineKeyboardButton("🔌 Find Station", callback_data="find"),
-         InlineKeyboardButton("⏱️ Charge Time", callback_data="chargetime_start")],
-        [InlineKeyboardButton("💡 Battery Tips", callback_data="tips")]
-    ]
+def get_main_menu(lang="MM"):
+    if lang == "MM":
+        keyboard = [
+            [InlineKeyboardButton("🚗 ကား မှတ်ပုံတင်", callback_data="reg_start"),
+             InlineKeyboardButton("🔋 Battery အပ်ဒိတ်", callback_data="upd_start")],
+            [InlineKeyboardButton("📊 အခြေအနေ", callback_data="stat"),
+             InlineKeyboardButton("📜 မှတ်တမ်း", callback_data="hist")],
+            [InlineKeyboardButton("🔌 Station ရှာ", callback_data="find"),
+             InlineKeyboardButton("⏱️ အားသွင်းကြာချိန်", callback_data="chargetime_start")],
+            [InlineKeyboardButton("🚗 ကားများ", callback_data="cars"),
+             InlineKeyboardButton("📍 Favorites", callback_data="favs")],
+            [InlineKeyboardButton("🌐 EN/MM", callback_data="lang"),
+             InlineKeyboardButton("💡 Tips", callback_data="tips")],
+        ]
+    else:
+        keyboard = [
+            [InlineKeyboardButton("🚗 Register Car", callback_data="reg_start"),
+             InlineKeyboardButton("🔋 Update Battery", callback_data="upd_start")],
+            [InlineKeyboardButton("📊 My Status", callback_data="stat"),
+             InlineKeyboardButton("📜 History", callback_data="hist")],
+            [InlineKeyboardButton("🔌 Find Station", callback_data="find"),
+             InlineKeyboardButton("⏱️ Charge Time", callback_data="chargetime_start")],
+            [InlineKeyboardButton("🚗 My Cars", callback_data="cars"),
+             InlineKeyboardButton("📍 Favorites", callback_data="favs")],
+            [InlineKeyboardButton("🌐 EN/MM", callback_data="lang"),
+             InlineKeyboardButton("💡 Tips", callback_data="tips")],
+        ]
     return InlineKeyboardMarkup(keyboard)
 
 # --- /start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = "⚡ <b>EV Helper Smart Assistant</b>\n\nကြိုဆိုပါတယ်! အောက်ပါခလုတ်များကို အသုံးပြု၍ စတင်နိုင်ပါပြီ။"
+    uid = update.effective_user.id
+    db.get_or_create_user(uid)
+    lang = get_lang(uid)
+    msg = ("⚡ <b>EV Helper Smart Assistant</b>\n\nကြိုဆိုပါတယ်!"
+           if lang == "MM" else
+           "⚡ <b>EV Helper Smart Assistant</b>\n\nWelcome!")
     if update.message:
-        await update.message.reply_html(msg, reply_markup=get_main_menu())
+        await update.message.reply_html(msg, reply_markup=get_main_menu(lang))
     else:
-        await update.callback_query.message.edit_text(msg, reply_markup=get_main_menu(), parse_mode="HTML")
+        await update.callback_query.message.edit_text(msg, reply_markup=get_main_menu(lang), parse_mode="HTML")
 
-# --- Callback Handler ---
-# BUG FIX: button_handler သည် ConversationHandler entry_points နဲ့ ထပ်နေသည့် ပြဿနာကို
-# ဖြေရှင်းရန် — button_handler မှ conversation states တွေ return မလုပ်တော့ဘဲ
-# ConversationHandler တွေကိုသာ entry_point အဖြစ် သုံးတယ်။
+# --- Button Handler ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    uid = update.effective_user.id
+    lang = get_lang(uid)
 
     if query.data == "stat":
         await status(update, context)
@@ -86,6 +97,49 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await find_station(update, context)
     elif query.data == "tips":
         await tips(update, context)
+    elif query.data == "cars":
+        await show_cars(update, context)
+    elif query.data == "favs":
+        await show_favorites(update, context)
+    elif query.data == "lang":
+        await lang_menu(update, context)
+    elif query.data == "lang_mm":
+        db.set_language(uid, "MM")
+        await query.message.reply_html(utils.t("MM", "lang_set"), reply_markup=get_main_menu("MM"))
+    elif query.data == "lang_en":
+        db.set_language(uid, "EN")
+        await query.message.reply_html(utils.t("EN", "lang_set"), reply_markup=get_main_menu("EN"))
+    elif query.data.startswith("switch_car_"):
+        car_id = int(query.data.replace("switch_car_", ""))
+        db.switch_car(uid, car_id)
+        await query.message.reply_html("✅ ကား ပြောင်းပြီးပါပြီ။", reply_markup=get_main_menu(lang))
+    elif query.data.startswith("del_car_"):
+        car_id = int(query.data.replace("del_car_", ""))
+        db.delete_car(uid, car_id)
+        await query.message.reply_html("🗑️ ကား ဖျက်ပြီးပါပြီ။", reply_markup=get_main_menu(lang))
+    elif query.data.startswith("del_fav_"):
+        fav_id = int(query.data.replace("del_fav_", ""))
+        db.delete_favorite(uid, fav_id)
+        await query.message.reply_html(utils.t(lang, "deleted"), reply_markup=get_main_menu(lang))
+    elif query.data.startswith("save_fav_"):
+        parts = query.data.split("|")
+        name = parts[1]
+        address = parts[2]
+        lat = float(parts[3])
+        lon = float(parts[4])
+        db.add_favorite(uid, name, address, lat, lon)
+        await query.message.reply_html(utils.t(lang, "saved"), reply_markup=get_main_menu(lang))
+
+# ================================================================
+# LANGUAGE MENU
+# ================================================================
+async def lang_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg_obj = update.callback_query.message
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🇲🇲 မြန်မာ", callback_data="lang_mm"),
+         InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
+    ])
+    await msg_obj.reply_text("🌐 ဘာသာစကား ရွေးပါ / Select language:", reply_markup=kb)
 
 # ================================================================
 # REGISTRATION CONVERSATION
@@ -94,60 +148,67 @@ async def reg_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     msg_obj = u.callback_query.message if u.callback_query else u.message
     if u.callback_query:
         await u.callback_query.answer()
-    await msg_obj.reply_text("🚗 ကား Model အမည် ရိုက်ထည့်ပါ။ (ဥပမာ: Tesla Model 3)")
+    lang = get_lang(u.effective_user.id)
+    prompt = "🚗 ကားအမည် ရိုက်ပါ။ (ဥပမာ: ကားနံပါတ် သို့မဟုတ် ဟောင်ဒါ)" if lang == "MM" else "🚗 Enter a name for this car (e.g. My Tesla)"
+    await msg_obj.reply_text(prompt)
+    return CAR_NAME
+
+async def reg_car_name(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    c.user_data["car_name"] = u.message.text
+    lang = get_lang(u.effective_user.id)
+    prompt = "🚗 ကား Model ရိုက်ပါ။ (ဥပမာ: Toyota bZ3X)" if lang == "MM" else "🚗 Enter car model (e.g. Tesla Model 3)"
+    await u.message.reply_text(prompt)
     return MODEL
 
 async def reg_model(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    c.user_data["m"] = u.message.text
-    rate = get_charge_rate(u.message.text)
-    rate_info = detect_charge_rate_message(u.message.text)
-    c.user_data["r"] = rate
-    await u.message.reply_html(
-        f"{rate_info}\n\n🔋 Battery Capacity (kWh) ရိုက်ထည့်ပါ။ (ဥပမာ: 75)"
-    )
+    model = u.message.text
+    c.user_data["model"] = model
+    rate = get_charge_rate(model)
+    c.user_data["rate"] = rate
+    lang = get_lang(u.effective_user.id)
+    detected = f"⚡ Charge Rate: <b>{rate} kW</b> (Auto-detected)\n\n"
+    prompt = "🔋 Battery Capacity (kWh) ရိုက်ပါ။ (ဥပမာ: 72.8)" if lang == "MM" else "🔋 Enter battery capacity in kWh (e.g. 72.8)"
+    await u.message.reply_html(detected + prompt)
     return CAP
 
 async def reg_cap(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
-        cap = float(u.message.text)
-        c.user_data["c"] = cap
-        await u.message.reply_text("🛣️ Full Range (km) ရိုက်ထည့်ပါ။ (ဥပမာ: 450)")
+        c.user_data["cap"] = float(u.message.text)
+        lang = get_lang(u.effective_user.id)
+        prompt = "🛣️ Full Range (km) ရိုက်ပါ။ (ဥပမာ: 450)" if lang == "MM" else "🛣️ Enter full range in km (e.g. 450)"
+        await u.message.reply_text(prompt)
         return RANGE
     except ValueError:
-        await u.message.reply_text("ဂဏန်းဖြင့်သာ ရိုက်ထည့်ပါ။ (ဥပမာ: 75)")
+        await u.message.reply_text("ဂဏန်းဖြင့်သာ ရိုက်ပါ။")
         return CAP
 
 async def reg_range(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
+        uid = u.effective_user.id
+        lang = get_lang(uid)
         full_range = float(u.message.text)
-        db.save_user(
-            u.effective_user.id,
-            c.user_data["m"],
-            c.user_data["c"],
-            full_range,
-            c.user_data.get("r", 50)
-        )
-        await u.message.reply_html(
-            f"✅ <b>မှတ်ပုံတင်ပြီးပါပြီ။</b>\n"
-            f"🚗 Model: {c.user_data['m']}\n"
-            f"🔋 Capacity: {c.user_data['c']} kWh\n"
-            f"🛣️ Range: {full_range} km\n"
-            f"⚡ Charge Rate: {c.user_data.get('r', 50)} kW",
-            reply_markup=get_main_menu()
-        )
+        db.add_car(uid, c.user_data["car_name"], c.user_data["model"],
+                   c.user_data["cap"], full_range, c.user_data.get("rate", 50))
+        msg = (f"✅ <b>မှတ်ပုံတင်ပြီးပါပြီ။</b>\n"
+               f"🚗 {c.user_data['car_name']} ({c.user_data['model']})\n"
+               f"🔋 {c.user_data['cap']} kWh | 🛣️ {full_range} km\n"
+               f"⚡ {c.user_data.get('rate', 50)} kW")
+        await u.message.reply_html(msg, reply_markup=get_main_menu(lang))
     except Exception as e:
         logger.error(f"Reg Error: {e}")
-        await u.message.reply_text("Error ဖြစ်သွားပါတယ်။ ပြန်စမ်းကြည့်ပါ။")
+        await u.message.reply_text("Error ဖြစ်သွားပါသည်။")
     return ConversationHandler.END
 
 # ================================================================
-# BATTERY UPDATE CONVERSATION
+# BATTERY UPDATE
 # ================================================================
 async def update_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     msg_obj = u.callback_query.message if u.callback_query else u.message
     if u.callback_query:
         await u.callback_query.answer()
-    await msg_obj.reply_text("🔋 လက်ရှိ Battery % (0-100) ရိုက်ထည့်ပါ။")
+    lang = get_lang(u.effective_user.id)
+    prompt = "🔋 လက်ရှိ Battery % (0-100) ရိုက်ပါ။" if lang == "MM" else "🔋 Enter current battery % (0-100)"
+    await msg_obj.reply_text(prompt)
     return PCT
 
 async def update_done(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -155,239 +216,308 @@ async def update_done(u: Update, c: ContextTypes.DEFAULT_TYPE):
         pct = int(u.message.text)
         if not (0 <= pct <= 100):
             raise ValueError
-        db.update_pct(u.effective_user.id, pct)
-
-        # 🔔 BUG FIX + NEW FEATURE: Battery Warning
+        uid = u.effective_user.id
+        lang = get_lang(uid)
+        db.update_pct(uid, pct)
         warning = ""
         if pct <= 20:
-            warning = "\n\n⚠️ <b>Warning:</b> Battery နည်းနေပါပြီ! အကောင်းဆုံး အားသွင်းပါ။"
+            warning = f"\n\n{utils.t(lang, 'battery_low')}"
         elif pct >= 90:
-            warning = "\n\n💡 <b>Tip:</b> Battery 80% ကျော်ရင် အားသွင်းရပ်ဖို့ ကောင်းပါတယ်။"
-
-        await u.message.reply_html(
-            f"✅ Battery <b>{pct}%</b> အဖြစ် မှတ်သားပြီးပါပြီ။{warning}",
-            reply_markup=get_main_menu()
-        )
+            warning = f"\n\n{utils.t(lang, 'battery_high')}"
+        msg = f"✅ Battery <b>{pct}%</b>" + (" မှတ်သားပြီးပါပြီ။" if lang == "MM" else " updated.") + warning
+        await u.message.reply_html(msg, reply_markup=get_main_menu(lang))
     except ValueError:
-        await u.message.reply_text("0 မှ 100 အတွင်း ဂဏန်းဖြင့်သာ ရိုက်ထည့်ပါ။")
+        await u.message.reply_text("0 မှ 100 အတွင်း ဂဏန်းဖြင့်သာ ရိုက်ပါ။")
         return PCT
     return ConversationHandler.END
 
 # ================================================================
-# CHARGE TIME CONVERSATION
+# STATUS (+ Weather Range)
+# ================================================================
+async def status(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    car = db.get_active_car(uid)
+    msg_obj = u.callback_query.message if u.callback_query else u.message
+
+    if not car:
+        return await msg_obj.reply_text(utils.t(lang, "no_car"), reply_markup=get_main_menu(lang))
+
+    pct = car[7]
+    current_range = (pct / 100) * float(car[5])
+    icon = utils.get_battery_icon(pct)
+
+    warning = ""
+    if pct <= 20:
+        warning = f"\n{utils.t(lang, 'battery_low')}"
+    elif pct >= 90:
+        warning = f"\n{utils.t(lang, 'battery_high')}"
+
+    weather_text = ""
+    if hasattr(c, 'user_data') and c.user_data.get("last_lat"):
+        lat = c.user_data["last_lat"]
+        lon = c.user_data["last_lon"]
+        weather_data = utils.get_weather_and_range(lat, lon, float(car[5]), pct)
+        weather_text = utils.format_weather_range(weather_data, lang)
+
+    if lang == "MM":
+        msg = (f"📊 <b>လက်ရှိအခြေအနေ</b>\n\n"
+               f"🚗 {car[2]} ({car[3]})\n"
+               f"{icon} Battery: <b>{pct}%</b>{warning}\n"
+               f"🛣️ မောင်းနိုင်သည့်ခရီး: <b>{current_range:.1f} km</b>\n"
+               f"⚡ Charge Rate: {get_charge_rate(car[3])} kW{weather_text}")
+    else:
+        msg = (f"📊 <b>Current Status</b>\n\n"
+               f"🚗 {car[2]} ({car[3]})\n"
+               f"{icon} Battery: <b>{pct}%</b>{warning}\n"
+               f"🛣️ Est. Range: <b>{current_range:.1f} km</b>\n"
+               f"⚡ Charge Rate: {get_charge_rate(car[3])} kW{weather_text}")
+
+    await msg_obj.reply_html(msg, reply_markup=get_main_menu(lang))
+
+# ================================================================
+# CHARGE TIME
 # ================================================================
 async def chargetime_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     msg_obj = u.callback_query.message if u.callback_query else u.message
     if u.callback_query:
         await u.callback_query.answer()
-    await msg_obj.reply_text("🔋 လက်ရှိ Battery ရာခိုင်နှုန်းကို ရိုက်ထည့်ပါ။ (ဥပမာ: 20)")
+    lang = get_lang(u.effective_user.id)
+    prompt = "🔋 လက်ရှိ Battery % ရိုက်ပါ။" if lang == "MM" else "🔋 Enter current battery %"
+    await msg_obj.reply_text(prompt)
     return CHARGE_START_PCT
 
-async def chargetime_get_start_pct(u: Update, c: ContextTypes.DEFAULT_TYPE):
+async def chargetime_get_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
-        start_pct = int(u.message.text)
-        if not (0 <= start_pct <= 100):
-            raise ValueError
-        c.user_data["charge_start_pct"] = start_pct
-        await u.message.reply_text("🎯 အားသွင်းလိုသော Battery ရာခိုင်နှုန်းကို ရိုက်ထည့်ပါ။ (ဥပမာ: 80)")
+        pct = int(u.message.text)
+        if not (0 <= pct <= 100): raise ValueError
+        c.user_data["charge_start"] = pct
+        lang = get_lang(u.effective_user.id)
+        prompt = "🎯 အားသွင်းလိုသော % ရိုက်ပါ။ (ဥပမာ: 80)" if lang == "MM" else "🎯 Enter target battery % (e.g. 80)"
+        await u.message.reply_text(prompt)
         return CHARGE_END_PCT
     except ValueError:
-        await u.message.reply_text("0 မှ 100 အတွင်း ဂဏန်းဖြင့်သာ ရိုက်ထည့်ပါ။")
+        await u.message.reply_text("0-100 ဂဏန်းဖြင့်သာ ရိုက်ပါ။")
         return CHARGE_START_PCT
 
 async def chargetime_calculate(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         end_pct = int(u.message.text)
-        if not (0 <= end_pct <= 100):
-            raise ValueError
+        if not (0 <= end_pct <= 100): raise ValueError
+        start_pct = c.user_data["charge_start"]
+        uid = u.effective_user.id
+        lang = get_lang(uid)
 
-        start_pct = c.user_data["charge_start_pct"]
         if end_pct <= start_pct:
-            await u.message.reply_text(f"အားသွင်းလိုသော % သည် လက်ရှိ % ({start_pct}%) ထက် ကြီးရပါမည်။")
+            await u.message.reply_text(f"Target % သည် {start_pct}% ထက် ကြီးရမည်။")
             return CHARGE_END_PCT
 
-        user = db.get_user(u.effective_user.id)
-        if not user:
-            await u.message.reply_text("/start မှ Register အရင်လုပ်ပါ။", reply_markup=get_main_menu())
+        car = db.get_active_car(uid)
+        if not car:
+            await u.message.reply_text(utils.t(lang, "no_car"), reply_markup=get_main_menu(lang))
             return ConversationHandler.END
 
-        battery_capacity_kwh = float(user[2])
-        # ⚡ NEW: ကားမော်ဒယ်အလိုက် charge rate auto-detect
-        model = user[1]
-        max_charge_rate_kw = get_charge_rate(model)
+        cap = float(car[4])
+        rate = get_charge_rate(car[3])
+        minutes = utils.calculate_charge_time(start_pct, end_pct, cap, rate)
+        time_str = utils.format_charge_time(minutes)
+        kwh = cap * (end_pct - start_pct) / 100
 
-        kwh_needed = (end_pct - start_pct) / 100 * battery_capacity_kwh
-        charge_time_hours = kwh_needed / max_charge_rate_kw
-        charge_time_minutes = round(charge_time_hours * 60)
+        if lang == "MM":
+            msg = (f"⏱️ <b>အားသွင်းကြာချိန်</b>\n\n"
+                   f"🚗 {car[2]} ({car[3]})\n"
+                   f"⚡ {rate} kW\n"
+                   f"🔋 {start_pct}% → {end_pct}%\n"
+                   f"🔌 {kwh:.1f} kWh\n"
+                   f"⏱️ ကြာချိန်: <b>{time_str}</b>")
+        else:
+            msg = (f"⏱️ <b>Charge Time Estimate</b>\n\n"
+                   f"🚗 {car[2]} ({car[3]})\n"
+                   f"⚡ {rate} kW\n"
+                   f"🔋 {start_pct}% → {end_pct}%\n"
+                   f"🔌 {kwh:.1f} kWh needed\n"
+                   f"⏱️ Time: <b>{time_str}</b>")
 
-        hours = charge_time_minutes // 60
-        minutes = charge_time_minutes % 60
-        time_str = f"{hours} နာရီ {minutes} မိနစ်" if hours > 0 else f"{minutes} မိနစ်"
-
-        await u.message.reply_html(
-            f"⏱️ <b>အားသွင်းကြာချိန် ခန့်မှန်းချက်</b>\n\n"
-            f"🚗 Model: {model}\n"
-            f"⚡ Charge Rate: {max_charge_rate_kw} kW\n"
-            f"🔋 {start_pct}% → {end_pct}%\n"
-            f"🔌 လိုအပ်သော kWh: {kwh_needed:.1f} kWh\n"
-            f"⏱️ ကြာချိန်: <b>{time_str}</b>",
-            reply_markup=get_main_menu()
-        )
+        await u.message.reply_html(msg, reply_markup=get_main_menu(lang))
         return ConversationHandler.END
     except ValueError:
-        await u.message.reply_text("0 မှ 100 အတွင်း ဂဏန်းဖြင့်သာ ရိုက်ထည့်ပါ။")
+        await u.message.reply_text("0-100 ဂဏန်းဖြင့်သာ ရိုက်ပါ။")
         return CHARGE_END_PCT
 
 # ================================================================
-# STATUS
-# ================================================================
-async def status(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    uid = u.effective_user.id
-    user = db.get_user(uid)
-    msg_obj = u.callback_query.message if u.callback_query else u.message
-
-    if not user:
-        return await msg_obj.reply_text("Register အရင်လုပ်ပါ။", reply_markup=get_main_menu())
-
-    pct = user[4]
-    current_range = (pct / 100) * float(user[3])
-
-    # 🔔 Battery Warning
-    if pct <= 20:
-        battery_icon = "🔴"
-        warning = "\n⚠️ Battery နည်းနေပါပြီ! အကောင်းဆုံး အားသွင်းပါ။"
-    elif pct <= 50:
-        battery_icon = "🟡"
-        warning = ""
-    else:
-        battery_icon = "🟢"
-        warning = ""
-
-    await msg_obj.reply_html(
-        f"📊 <b>လက်ရှိအခြေအနေ</b>\n\n"
-        f"🚗 Model: {user[1]}\n"
-        f"{battery_icon} Battery: <b>{pct}%</b>{warning}\n"
-        f"🛣️ မောင်းနိုင်သည့်ခရီး: <b>{current_range:.1f} km</b>\n"
-        f"⚡ Charge Rate: {get_charge_rate(user[1])} kW",
-        reply_markup=get_main_menu()
-    )
-
-# ================================================================
-# HISTORY — 📈 ASCII Chart ပြ
+# HISTORY
 # ================================================================
 async def history(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
+    lang = get_lang(uid)
     logs = db.get_logs(uid)
     msg_obj = u.callback_query.message if u.callback_query else u.message
-
     if not logs:
-        return await msg_obj.reply_text("မှတ်တမ်း မရှိပါ။", reply_markup=get_main_menu())
-
-    # 📈 ASCII Bar Chart (Telegram မှာ image မပြနိုင်သောကြောင့်)
-    msg = "📜 <b>Battery မှတ်တမ်းများ</b>\n\n"
-    msg += "<code>"
-    recent_logs = logs[-10:]  # နောက်ဆုံး 10 ခု
-    for log in recent_logs:
-        date_str = str(log[4])[:10]
-        pct_val = int(log[3])
-        bar_len = pct_val // 5  # 20 chars max
-        bar = "█" * bar_len + "░" * (20 - bar_len)
-        msg += f"{date_str} |{bar}| {pct_val}%\n"
-    msg += "</code>"
-
-    await msg_obj.reply_html(msg, reply_markup=get_main_menu())
+        return await msg_obj.reply_text(utils.t(lang, "no_history"), reply_markup=get_main_menu(lang))
+    title = "📜 <b>Battery မှတ်တမ်းများ</b>\n\n" if lang == "MM" else "📜 <b>Battery History</b>\n\n"
+    await msg_obj.reply_html(title + utils.format_logs_chart(logs), reply_markup=get_main_menu(lang))
 
 # ================================================================
-# FIND STATION — 🗺️ Google Maps Link တိုက်ရိုက်
+# FIND STATION
 # ================================================================
 async def find_station(u: Update, c: ContextTypes.DEFAULT_TYPE):
     msg_obj = u.callback_query.message if u.callback_query else u.message
-    kb = [[KeyboardButton("📍 တည်နေရာပေးပို့ရန်", request_location=True)]]
+    lang = get_lang(u.effective_user.id)
+    prompt = "📍 တည်နေရာပေးပို့ရန်" if lang == "MM" else "📍 Share Location"
+    kb = [[KeyboardButton(prompt, request_location=True)]]
     await msg_obj.reply_text(
-        "အနီးဆုံး Charging Station ရှာရန် တည်နေရာကို ပေးပို့ပါ။",
+        "အနီးဆုံး Charging Station ရှာရန် တည်နေရာပေးပါ။" if lang == "MM" else "Share your location to find nearby charging stations.",
         reply_markup=ReplyKeyboardMarkup(kb, one_time_keyboard=True, resize_keyboard=True)
     )
 
 async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    msg_obj = u.message
-
-    if not OPEN_CHARGE_MAP_API_KEY:
-        await msg_obj.reply_text("API Key မရှိသောကြောင့် Station ရှာမရပါ။", reply_markup=get_main_menu())
-        return
-
+    uid = u.effective_user.id
+    lang = get_lang(uid)
     lat = u.message.location.latitude
     lon = u.message.location.longitude
+    c.user_data["last_lat"] = lat
+    c.user_data["last_lon"] = lon
 
-    await msg_obj.reply_text("🔍 အားသွင်းစခန်းများ ရှာဖွေနေပါသည်...", reply_markup=ReplyKeyboardRemove())
+    await u.message.reply_text(
+        "🔍 Station ရှာဖွေနေပါသည်..." if lang == "MM" else "🔍 Searching for stations...",
+        reply_markup=ReplyKeyboardRemove()
+    )
 
     stations = charge_api.get_nearby_charging_stations(lat, lon, distance=10, max_results=5)
+    if not stations:
+        return await u.message.reply_text(
+            "Station မတွေ့ပါ။" if lang == "MM" else "No stations found nearby.",
+            reply_markup=get_main_menu(lang)
+        )
 
-    if stations:
-        msg = "🔌 <b>အနီးဆုံး အားသွင်းစခန်းများ:</b>\n\n"
-        for i, station in enumerate(stations):
-            title = station.get("addressInfo", {}).get("title", "N/A")
-            address = station.get("addressInfo", {}).get("addressLine1", "")
-            distance = station.get("addressInfo", {}).get("distance", 0)
-            s_lat = station.get("addressInfo", {}).get("latitude")
-            s_lon = station.get("addressInfo", {}).get("longitude")
+    title = "🔌 <b>အနီးဆုံး အားသွင်းစခန်းများ:</b>\n\n" if lang == "MM" else "🔌 <b>Nearby Charging Stations:</b>\n\n"
+    msg = title
+    keyboard = []
 
-            # 🗺️ NEW: Google Maps Direct Link
-            maps_link = f"https://www.google.com/maps/dir/?api=1&destination={s_lat},{s_lon}"
-            navigate_link = f"https://www.google.com/maps/search/?api=1&query={s_lat},{s_lon}"
+    for i, station in enumerate(stations):
+        info = station.get("addressInfo", {})
+        name = info.get("title", "N/A")
+        address = info.get("addressLine1", "")
+        dist = info.get("distance", 0)
+        s_lat = info.get("latitude")
+        s_lon = info.get("longitude")
 
-            msg += f"{i+1}. <b>{title}</b> ({distance:.1f} km)\n"
-            if address:
-                msg += f"   📍 {address}\n"
+        maps_link = f"https://www.google.com/maps/dir/?api=1&destination={s_lat},{s_lon}"
+        view_link = f"https://www.google.com/maps/search/?api=1&query={s_lat},{s_lon}"
 
-            connections = station.get("connections", [])
-            if connections:
-                conn_details = []
-                for conn in connections:
-                    conn_type = conn.get("connectionType", {}).get("title", "N/A")
-                    power_kw = conn.get("powerKW", "N/A")
-                    conn_details.append(f"{conn_type} ({power_kw}kW)")
-                msg += f"   ⚡ {', '.join(conn_details)}\n"
+        msg += f"{i+1}. <b>{name}</b> ({dist:.1f} km)\n"
+        if address:
+            msg += f"   📍 {address}\n"
+        conns = station.get("connections", [])
+        if conns:
+            details = [f"{cn.get('connectionType',{}).get('title','?')} ({cn.get('powerKW','?')}kW)" for cn in conns]
+            msg += f"   ⚡ {', '.join(details)}\n"
+        msg += f"   <a href=\"{maps_link}\">🗺️ Navigate</a> | <a href=\"{view_link}\">📌 View</a>\n"
 
-            msg += f"   <a href=\"{maps_link}\">🗺️ Navigate</a> | <a href=\"{navigate_link}\">📌 View on Map</a>\n\n"
+        # Save favorite button
+        cb = f"save_fav_|{name}|{address or 'N/A'}|{s_lat}|{s_lon}"
+        keyboard.append([InlineKeyboardButton(f"⭐ Save: {name[:20]}", callback_data=cb)])
 
-        await msg_obj.reply_html(msg, disable_web_page_preview=True, reply_markup=get_main_menu())
-    else:
-        await msg_obj.reply_text("သင့်အနီးအနားတွင် Station ရှာမတွေ့ပါ။", reply_markup=get_main_menu())
+        msg += "\n"
+
+    keyboard.append([InlineKeyboardButton("🔙 Menu", callback_data="start")])
+    await u.message.reply_html(msg, disable_web_page_preview=True,
+                                reply_markup=InlineKeyboardMarkup(keyboard))
+
+# ================================================================
+# MULTIPLE CARS
+# ================================================================
+async def show_cars(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    cars = db.get_all_cars(uid)
+    msg_obj = u.callback_query.message
+
+    if not cars:
+        return await msg_obj.reply_text(utils.t(lang, "no_car"), reply_markup=get_main_menu(lang))
+
+    msg = "🚗 <b>သင့်ကားများ:</b>\n\n" if lang == "MM" else "🚗 <b>Your Cars:</b>\n\n"
+    keyboard = []
+    for car in cars:
+        active = "✅" if car[8] == 1 else ""
+        msg += f"{active} <b>{car[2]}</b> — {car[3]} | {car[4]}kWh | {car[7]}%\n"
+        row = []
+        if car[8] != 1:
+            row.append(InlineKeyboardButton(f"✅ Use {car[2]}", callback_data=f"switch_car_{car[0]}"))
+        row.append(InlineKeyboardButton(f"🗑️ Delete {car[2]}", callback_data=f"del_car_{car[0]}"))
+        keyboard.append(row)
+
+    keyboard.append([InlineKeyboardButton("➕ Add Car", callback_data="reg_start")])
+    await msg_obj.reply_html(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+
+# ================================================================
+# FAVORITES
+# ================================================================
+async def show_favorites(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    favs = db.get_favorites(uid)
+    msg_obj = u.callback_query.message
+
+    if not favs:
+        return await msg_obj.reply_text(utils.t(lang, "no_favorites"), reply_markup=get_main_menu(lang))
+
+    msg = "📍 <b>Favorite Stations:</b>\n\n"
+    keyboard = []
+    for fav in favs:
+        maps_link = f"https://www.google.com/maps/dir/?api=1&destination={fav[4]},{fav[5]}"
+        msg += f"⭐ <b>{fav[2]}</b>\n   📍 {fav[3]}\n   <a href=\"{maps_link}\">🗺️ Navigate</a>\n\n"
+        keyboard.append([InlineKeyboardButton(f"🗑️ {fav[2][:20]}", callback_data=f"del_fav_{fav[0]}")])
+
+    keyboard.append([InlineKeyboardButton("🔙 Menu", callback_data="start")])
+    await msg_obj.reply_html(msg, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup(keyboard))
 
 # ================================================================
 # TIPS
 # ================================================================
 async def tips(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
     msg_obj = u.callback_query.message if u.callback_query else u.message
-    await msg_obj.reply_html(
-        "💡 <b>EV Battery Tips:</b>\n\n"
-        "• 🟢 Battery <b>20%-80%</b> ကြားထားပါ — lifetime တိုးတယ်။\n"
-        "• 🌙 ညဘက် (Off-peak) အားသွင်းရင် စျေးသက်သာပါတယ်။\n"
-        "• ❄️ အအေးချိန်မှာ range ကျတတ်သည် — သတိထားပါ။\n"
-        "• ⚡ DC Fast Charge ကို မကြာမကြာ မသုံးပါနဲ့ — battery ထိခိုက်နိုင်တယ်။\n"
-        "• 🔄 တစ်လတစ်ကြိမ် 100% အထိ အားသွင်းပြီး calibrate လုပ်ပါ။",
-        reply_markup=get_main_menu()
-    )
+    if lang == "MM":
+        msg = ("💡 <b>EV Battery Tips:</b>\n\n"
+               "• 🟢 Battery <b>20%-80%</b> ကြားထားပါ\n"
+               "• 🌙 ညဘက် Off-peak မှာ အားသွင်းပါ\n"
+               "• ❄️ အအေးမှာ range ကျနိုင်တယ်\n"
+               "• ⚡ DC Fast Charge မကြာမကြာ မသုံးပါနဲ့\n"
+               "• 🔄 တစ်လတစ်ကြိမ် 100% calibrate လုပ်ပါ")
+    else:
+        msg = ("💡 <b>EV Battery Tips:</b>\n\n"
+               "• 🟢 Keep battery between <b>20%-80%</b>\n"
+               "• 🌙 Charge during off-peak hours\n"
+               "• ❄️ Cold weather reduces range\n"
+               "• ⚡ Avoid frequent DC Fast Charging\n"
+               "• 🔄 Calibrate monthly with full charge")
+    await msg_obj.reply_html(msg, reply_markup=get_main_menu(lang))
 
 # ================================================================
-# OFF-PEAK REMINDER (JobQueue)
+# OFF-PEAK REMINDER
 # ================================================================
 async def send_off_peak_reminder(context: ContextTypes.DEFAULT_TYPE):
-    user_ids = db.get_all_user_ids()
-    for user_id in user_ids:
+    for uid in db.get_all_user_ids():
         try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text="🌙 Off-Peak Reminder: ညဘက် အားသွင်းဖို့ မမေ့ပါနဲ့! Battery 80% ထိသာ အားသွင်းပါ။"
-            )
+            lang = db.get_language(uid)
+            msg = ("🌙 ည Off-Peak အားသွင်းချိန်ရောက်ပြီ! Battery 80% ထိသာ သွင်းပါ။"
+                   if lang == "MM" else
+                   "🌙 Off-peak charging time! Charge to 80% only.")
+            await context.bot.send_message(chat_id=uid, text=msg)
         except Exception as e:
-            logger.error(f"Reminder failed for {user_id}: {e}")
+            logger.error(f"Reminder failed for {uid}: {e}")
 
 # ================================================================
 # CANCEL
 # ================================================================
 async def cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("လုပ်ဆောင်ချက်ကို ဖျက်သိမ်းလိုက်ပါပြီ။", reply_markup=get_main_menu())
+    lang = get_lang(u.effective_user.id)
+    await u.message.reply_text(
+        "ဖျက်သိမ်းပြီးပါပြီ။" if lang == "MM" else "Cancelled.",
+        reply_markup=get_main_menu(lang)
+    )
     return ConversationHandler.END
 
 # ================================================================
@@ -400,25 +530,19 @@ def main():
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # JobQueue — Off-Peak Reminder (ည ၁၀ နာရी တိုင်း)
-    job_queue = app.job_queue
     from datetime import time as dtime
-    job_queue.run_daily(
-        send_off_peak_reminder,
-        time=dtime(hour=22, minute=0),  # ည ၁၀ နာရི
-        name="off_peak_reminder"
-    )
+    app.job_queue.run_daily(send_off_peak_reminder, time=dtime(hour=22, minute=0))
 
-    # --- Conversation Handlers ---
     reg_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(reg_start, pattern="^reg_start$"),
             CommandHandler("register", reg_start)
         ],
         states={
-            MODEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_model)],
-            CAP:   [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_cap)],
-            RANGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_range)],
+            CAR_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_car_name)],
+            MODEL:    [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_model)],
+            CAP:      [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_cap)],
+            RANGE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_range)],
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
@@ -428,9 +552,7 @@ def main():
             CallbackQueryHandler(update_start, pattern="^upd_start$"),
             CommandHandler("update", update_start)
         ],
-        states={
-            PCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_done)]
-        },
+        states={PCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_done)]},
         fallbacks=[CommandHandler("cancel", cancel)]
     )
 
@@ -440,18 +562,17 @@ def main():
             CommandHandler("chargetime", chargetime_start)
         ],
         states={
-            CHARGE_START_PCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, chargetime_get_start_pct)],
+            CHARGE_START_PCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, chargetime_get_start)],
             CHARGE_END_PCT:   [MessageHandler(filters.TEXT & ~filters.COMMAND, chargetime_calculate)],
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
 
-    # --- Handlers Register ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(reg_conv)
     app.add_handler(upd_conv)
     app.add_handler(chargetime_conv)
-    app.add_handler(CallbackQueryHandler(button_handler))  # stat, hist, find, tips
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.LOCATION, location_handler))
 
     print("✅ EV Helper Bot running...")
