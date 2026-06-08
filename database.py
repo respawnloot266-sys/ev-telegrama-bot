@@ -50,8 +50,24 @@ def update_pct(uid, pct):
     conn = connect_db()
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET current_pct = ? WHERE id = ?", (pct, uid))
-    cursor.execute("INSERT INTO logs (user_id, action, value) VALUES (?, 'update_pct', ?)", (uid, pct))
+    cursor.execute("INSERT INTO logs (user_id, action, value) VALUES (?, ?, ?)", (uid, 'update_pct', pct))
     conn.commit()
     conn.close()
+
+def get_logs(uid):
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM logs WHERE user_id = ? ORDER BY date DESC LIMIT 10", (uid,))
+    res = cursor.fetchall()
+    conn.close()
+    return res
+
+def get_all_user_ids():
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users")
+    res = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in res]
 
 init_db()
