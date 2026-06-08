@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove,  KeyboardButtom
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove,  KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler
 
 from config import TELEGRAM_BOT_TOKEN, DEFAULT_LOW_BATTERY_THRESHOLD, CHARGER_TYPES
