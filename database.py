@@ -6,14 +6,7 @@ from config import DATABASE_NAME
 def connect_db():
     """Connects to the SQLite database."""
     return sqlite3.connect(DATABASE_NAME)
-    def get_logs(uid):
-    conn = connect_db()
-    cursor = conn.cursor()
-    # နောက်ဆုံးပို့ခဲ့တဲ့ မှတ်တမ်း ၁၀ ခုကို ပြပါမယ်
-    cursor.execute("SELECT * FROM logs WHERE user_id = ? ORDER BY date DESC LIMIT 10", (uid,))
-    res = cursor.fetchall()
-    conn.close()
-    return res
+    
 
 
 def init_db():
