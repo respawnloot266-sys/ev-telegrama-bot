@@ -48,7 +48,7 @@ async def start(update: Update, context) -> int:
     )
     return ConversationHandler.END
 
-async def register_user(update: Update, context) -> int:
+async def register_start(update: Update, context) -> int:
     """Starts the registration conversation."""
     await update.message.reply_text(
         "🚗 ကား Model ရိုက်ထည့်ပါ (ဥပမာ: Tesla Model 3)"
