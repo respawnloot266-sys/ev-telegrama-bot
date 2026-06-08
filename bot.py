@@ -440,7 +440,7 @@ def main():
 
     # Commands များ ထည့်သွင်းခြင်း
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("register", register))
+    application.add_handler(CommandHandler("register", register_start))
     application.add_handler(CommandHandler("battery", battery_update))
     application.add_handler(CommandHandler("findstation", find_station))
     application.add_handler(CommandHandler("chargetime", charge_time_calc))
