@@ -1,109 +1,102 @@
 import math
 from datetime import datetime, timedelta
-from config import DEFAULT_MAX_CHARGE_RATE_KW
+
+# Default charge rate (config.py မလိုတော့ဘဲ bot.py ရဲ့ CAR_CHARGE_RATES နဲ့ sync ဖြစ်နေတယ်)
+DEFAULT_MAX_CHARGE_RATE_KW = 50
 
 def calculate_distance(lat1, lon1, lat2, lon2):
-    """Calculates distance between two GPS coordinates in kilometers."""
-    R = 6371  # Radius of Earth in kilometers
-
+    """GPS coordinates နှစ်ခုကြား ကီလိုမီတာ တွက်တယ်။"""
+    R = 6371
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2) * math.sin(dlat / 2) + \
-        math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * \
-        math.sin(dlon / 2) * math.sin(dlon / 2)
+    a = (math.sin(dlat / 2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+         math.sin(dlon / 2) ** 2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    distance = R * c
-    return distance
+    return R * c
 
 def calculate_charge_time(start_percent, end_percent, battery_capacity_kwh, max_charge_rate_kw=DEFAULT_MAX_CHARGE_RATE_KW):
-    """Calculates approximate charge time in minutes.
-    Assumes linear charging for simplicity. Real-world charging is non-linear.
-    """
+    """အားသွင်းကြာချိန် မိနစ်ဖြင့် တွက်တယ်။"""
     if start_percent >= end_percent:
         return 0
-
-    # Usable capacity needed in kWh
     kwh_needed = battery_capacity_kwh * (end_percent - start_percent) / 100
-
-    # Time in hours
     time_hours = kwh_needed / max_charge_rate_kw
+    return round(time_hours * 60)
 
-    # Time in minutes
-    time_minutes = time_hours * 60
-    return round(time_minutes)
+def format_charge_time(minutes: int) -> str:
+    """မိနစ်ကို နာရီ + မိနစ် ပုံစံ ပြောင်းတယ်။ (ဥပမာ: 1 နာရီ 30 မိနစ်)"""
+    if minutes <= 0:
+        return "0 မိနစ်"
+    hours = minutes // 60
+    mins = minutes % 60
+    if hours > 0 and mins > 0:
+        return f"{hours} နာရီ {mins} မိနစ်"
+    elif hours > 0:
+        return f"{hours} နာရီ"
+    else:
+        return f"{mins} မိနစ်"
 
-def format_charge_history(history_records):
-    """Formats charge history records into a human-readable string."""
-    if not history_records:
-        return "အားသွင်းမှတ်တမ်း မရှိသေးပါဘူး။"
+def format_battery_bar(pct: int, width: int = 20) -> str:
+    """Battery % ကို ASCII bar ပုံစံပြောင်းတယ်။"""
+    filled = round(pct / 100 * width)
+    return "█" * filled + "░" * (width - filled)
 
-    message = "🔌 **အားသွင်းမှတ်တမ်းများ** 🔌\n\n"
-    for record in history_records:
-        # Assuming record is a tuple: (id, user_id, start_time, end_time, start_battery, end_battery, kwh_charged, cost, station_name, station_id, charger_type)
-        start_time_dt = datetime.strptime(record[2], 
-'%Y-%m-%d %H:%M:%S') if isinstance(record[2], str) else record[2]
-        end_time_dt = datetime.strptime(record[3], 
-'%Y-%m-%d %H:%M:%S') if isinstance(record[3], str) else record[3]
-        duration = end_time_dt - start_time_dt
-        duration_str = str(timedelta(seconds=round(duration.total_seconds())))
+def get_battery_status_icon(pct: int) -> str:
+    """Battery % အပေါ် မူတည်ပြီး icon ပြတယ်။"""
+    if pct <= 20:
+        return "🔴"
+    elif pct <= 50:
+        return "🟡"
+    else:
+        return "🟢"
 
-        message += f"🗓️ **ရက်စွဲ:** {start_time_dt.strftime('%Y-%m-%d %H:%M')}\n"
-        message += f"🔋 **Battery:** {record[4]}% -> {record[5]}%\n"
-        if record[6]:
-            message += f"⚡ **ဖြည့်သွင်း:** {record[6]:.2f} kWh\n"
-        if record[7]:
-            message += f"💸 **ကုန်ကျစရိတ်:** {record[7]:.2f} ကျပ်\n"
-        if record[8]:
-            message += f"📍 **Station:** {record[8]} ({record[10] or 'N/A'})\n"
-        message += f"⏱️ **ကြာချိန်:** {duration_str}\n"
-        message += "--------------------\n"
-    return message
+def format_logs_as_chart(logs: list) -> str:
+    """Battery log များကို ASCII chart ပုံစံပြောင်းတယ်။"""
+    if not logs:
+        return "မှတ်တမ်း မရှိပါ။"
+    msg = "<code>"
+    for log in logs:
+        date_str = str(log[4])[:10]
+        pct_val = int(log[3])
+        bar = format_battery_bar(pct_val)
+        icon = get_battery_status_icon(pct_val)
+        msg += f"{date_str} |{bar}| {icon}{pct_val}%\n"
+    msg += "</code>"
+    return msg
 
-def get_monthly_report(user_id, charge_history_records):
-    """Generates a monthly report for charge history."""
-    total_kwh = 0.0
-    total_cost = 0.0
-    current_month = datetime.now().month
-    current_year = datetime.now().year
+def get_battery_health_tips() -> str:
+    """Battery Health Tips ပြတယ်။"""
+    return (
+        "💡 <b>EV Battery Tips:</b>\n\n"
+        "1. 🟢 Battery <b>20%-80%</b> ကြားထားပါ — lifetime တိုးတယ်။\n"
+        "2. 🌙 ညဘက် (Off-peak) အားသွင်းရင် စျေးသက်သာတယ်။\n"
+        "3. ❄️ အအေးချိန်မှာ range ကျတတ်သည် — သတိထားပါ။\n"
+        "4. ⚡ DC Fast Charge ကို မကြာမကြာ မသုံးပါနဲ့ — battery ထိခိုက်နိုင်တယ်။\n"
+        "5. 🔄 တစ်လတစ်ကြိမ် 100% အထိ အားသွင်းပြီး calibrate လုပ်ပါ။\n"
+        "6. 🌡️ အပူချိန်လွန်ကဲသော နေရာတွေမှာ ကားရပ်ထားတာ ရှောင်ပါ။"
+    )
 
-    for record in charge_history_records:
-        end_time_dt = datetime.strptime(record[3], 
-'%Y-%m-%d %H:%M:%S') if isinstance(record[3], str) else record[3]
-        if end_time_dt.month == current_month and end_time_dt.year == current_year:
-            if record[6]: # kwh_charged
-                total_kwh += record[6]
-            if record[7]: # cost
-                total_cost += record[7]
-    
-    if total_kwh == 0 and total_cost == 0:
-        return f"ဒီလ ({datetime.now().strftime('%B %Y')}) အတွက် အားသွင်းမှတ်တမ်း မရှိသေးပါဘူး။"
+def get_off_peak_reminder() -> str:
+    """Off-peak charging reminder ပြတယ်။"""
+    return (
+        "🌙 <b>Off-Peak Charging Reminder</b>\n\n"
+        "ည ၁၀ နာရီမှ မနက် ၆ နာရီ အတွင်း အားသွင်းတာက "
+        "လျှပ်စစ်ဓာတ်အားခ သက်သာစေနိုင်ပါတယ်။\n"
+        "Battery ကို 80% ထိသာ အားသွင်းပါ။"
+    )
 
-    message = f"📊 **{datetime.now().strftime('%B %Y')} လစဉ် အစီရင်ခံစာ** 📊\n\n"
-    message += f"⚡ **စုစုပေါင်း ဖြည့်သွင်း:** {total_kwh:.2f} kWh\n"
-    message += f"💸 **စုစုပေါင်း ကုန်ကျစရိတ်:** {total_cost:.2f} ကျပ်\n"
-    message += "\n🔋 Battery သက်တမ်း ရှည်ဖို့ အကြံပြုချက်များ ကိုလည်း ဖတ်ရှုနိုင်ပါတယ်။"
-    return message
+def get_service_reminder() -> str:
+    """Service reminder ပြတယ်။"""
+    return (
+        "🛠️ <b>Service Reminder</b>\n\n"
+        "ထုတ်လုပ်သူ လမ်းညွှန်ချက်အတိုင်း ပုံမှန် Service လုပ်ဖို့ မမေ့ပါနဲ့။\n"
+        "EV တွေမှာ Engine မပါပေမယ့် ဘရိတ်၊ တာယာ၊ Battery စနစ်တွေ စစ်ဆေးဖို့ လိုအပ်ပါတယ်။"
+    )
 
-def get_battery_health_tips():
-    """Returns general battery health tips."""
-    tips = [
-        "🔋 **Battery Health Tips:**\n",
-        "1. ကားကို ၁၀၀% အထိ အမြဲအားမသွင်းပါနဲ့။ ၈၀% - ၉၀% ကြားမှာ ရပ်တာက Battery သက်တမ်းကို ပိုရှည်စေပါတယ်။",
-        "2. Battery ကို ၀% အထိ လုံးဝ မကျပါစေနဲ့။ ၂၀% အောက် မရောက်ခင် အားပြန်သွင်းပါ။",
-        "3. အပူချိန်လွန်ကဲတဲ့ နေရာတွေမှာ ကားကို ရပ်တာ၊ အားသွင်းတာ ရှောင်ပါ။",
-        "4. DC Fast Charging ကို မကြာခဏ အသုံးမပြုပါနဲ့။ AC Charging က Battery အတွက် ပိုကောင်းပါတယ်။",
-        "5. ကားကို အကြာကြီး ရပ်ထားမယ်ဆိုရင် Battery ကို ၅၀% ဝန်းကျင်မှာ ထားပါ။"
-    ]
-    return "\n".join(tips)
-
-def get_off_peak_reminder():
-    """Returns off-peak charging reminder."""
-    return "💡 **Off-peak Charging Reminder:**\nညဘက် (ဥပမာ - ည ၁၀ နာရီမှ မနက် ၆ နာရီ) မှာ အားသွင်းတာက လျှပ်စစ်ဓာတ်အားခ သက်သာစေနိုင်ပါတယ်။ သင့်ဒေသရဲ့ off-peak အချိန်တွေကို စစ်ဆေးပြီး အားသွင်းပါ။"
-
-def get_service_reminder():
-    """Returns a general service reminder."""
-    return "🛠️ **Service Reminder:**\nသင့်ကားရဲ့ ထုတ်လုပ်သူ လမ်းညွှန်ချက်အတိုင်း ပုံမှန် Service လုပ်ဖို့ မမေ့ပါနဲ့။ EV တွေမှာ Engine မပါပေမယ့် ဘရိတ်၊ တာယာ၊ Battery စနစ်တွေကို စစ်ဆေးဖို့ လိုအပ်ပါတယ်။"
-
-def get_tyre_pressure_reminder():
-    """Returns a tyre pressure reminder."""
-    return "⚠️ **Tyre Pressure Reminder:**\nလုံခြုံစိတ်ချရသော မောင်းနှင်မှုနှင့် စွမ်းအင်ချွေတာမှုအတွက် သင့်ကားတာယာ လေဖိအားကို ပုံမှန်စစ်ဆေးပါ။ ထုတ်လုပ်သူ သတ်မှတ်ထားသော လေဖိအားအတိုင်း ထားရှိပါ။"
+def get_tyre_pressure_reminder() -> str:
+    """Tyre pressure reminder ပြတယ်။"""
+    return (
+        "⚠️ <b>Tyre Pressure Reminder</b>\n\n"
+        "လုံခြုံစိတ်ချရသော မောင်းနှင်မှုနှင့် စွမ်းအင်ချွေတာမှုအတွက် "
+        "တာယာ လေဖိအားကို ပုံမှန်စစ်ဆေးပါ။"
+    )
