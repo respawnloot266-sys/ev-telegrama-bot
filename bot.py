@@ -71,11 +71,23 @@ async def status(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_html(f"📊 <b>အခြေအနေ</b>\nModel: {user[1]}\nBattery: {pct}%\n🛣️ မောင်းနိုင်သည့်ခရီး: {current_range:.1f} km")
 
 async def history(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    logs = db.get_logs(u.effective_user.id)
-    if not logs: return await u.message.reply_text("မှတ်တမ်း မရှိပါ။")
-    msg = "📜 <b>မှတ်တမ်းများ:</b>\n"
-    for log in logs: msg += f"• {log[3][:16]} - {log[2]}%\n"
-    await u.message.reply_html(msg)
+    try:
+        logs = db.get_logs(u.effective_user.id)
+        if not logs: 
+            return await u.message.reply_text("မှတ်တမ်း မရှိသေးပါ။ /update ကို အရင်လုပ်ပါ။")
+        
+        msg = "📜 <b>နောက်ဆုံးပို့ခဲ့သော မှတ်တမ်းများ:</b>\n\n"
+        for log in logs:
+            # log[4] က date, log[3] က battery % value ပါ
+            date_str = str(log[4])[:16] 
+            pct_val = log[3]
+            msg += f"• {date_str} - <b>{pct_val}%</b>\n"
+            
+        await u.message.reply_html(msg)
+    except Exception as e:
+        logger.error(f"History Error: {e}")
+        await u.message.reply_text("မှတ်တမ်းထုတ်ရာတွင် အမှားရှိနေပါသည်။")
+
 
 async def find_station(u: Update, c: ContextTypes.DEFAULT_TYPE):
     kb = [[KeyboardButton("📍 တည်နေရာပေးပို့ရန်", request_location=True)]]
