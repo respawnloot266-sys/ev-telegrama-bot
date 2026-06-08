@@ -1,7 +1,7 @@
 import os
 import logging
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, CallbackQueryHandler, ContextTypes
 import database as db
 
 # Logging
@@ -14,90 +14,113 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 MODEL, CAP, RANGE = range(3)
 PCT = range(1)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_html(
-        "⚡ <b>EV Helper Bot</b>\n\n"
-        "/register - ကားအချက်အလက်သွင်းရန်\n"
-        "/update - Battery % update လုပ်ရန်\n"
-        "/status - လက်ရှိအခြေအနေ\n"
-        "/history - မှတ်တမ်းများကြည့်ရန်\n"
-        "/findstation - အနီးဆုံးစခန်းရှာရန်"
-    )
+# --- Main Menu (Buttons) ---
+def get_main_menu():
+    keyboard = [
+        [InlineKeyboardButton("🚗 Register Car", callback_data='reg'),
+         InlineKeyboardButton("🔋 Update Battery", callback_data='upd')],
+        [InlineKeyboardButton("📊 My Status", callback_data='stat'),
+         InlineKeyboardButton("📜 History", callback_data='hist')],
+        [InlineKeyboardButton("🔌 Find Station", callback_data='find'),
+         InlineKeyboardButton("💡 Battery Tips", callback_data='tips')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
-# --- Registration Flow ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = "⚡ <b>EV Helper Smart Assistant</b>\n\nကြိုဆိုပါတယ်! အောက်ပါခလုတ်များကို အသုံးပြု၍ စတင်နိုင်ပါပြီ။"
+    if update.message:
+        await update.message.reply_html(msg, reply_markup=get_main_menu())
+    else:
+        await update.callback_query.message.edit_text(msg, reply_markup=get_main_menu(), parse_mode='HTML')
+
+# --- Callback Handler (Buttons နှိပ်တာကို ကိုင်တွယ်ခြင်း) ---
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == 'reg':
+        await query.message.reply_text("🚗 ကား Model အမည် (ဥပမာ: Tesla Model 3)?")
+        return MODEL # ဒီနေရာမှာ Conversation စဖို့ လိုအပ်ပါက အောက်က handler တွေနဲ့ ချိတ်ရပါမယ်
+    elif query.data == 'upd':
+        await query.message.reply_text("🔋 လက်ရှိ Battery % (0-100)?")
+    elif query.data == 'stat':
+        await status(update, context)
+    elif query.data == 'hist':
+        await history(update, context)
+    elif query.data == 'find':
+        await find_station(update, context)
+    elif query.data == 'tips':
+        await tips(update, context)
+
+# --- Registration (Conversation) ---
 async def reg_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("🚗 ကား Model အမည် (ဥပမာ: Tesla Model 3)?")
+    await u.message.reply_text("🚗 ကား Model အမည်?")
     return MODEL
 
 async def reg_model(u: Update, c: ContextTypes.DEFAULT_TYPE):
     c.user_data["m"] = u.message.text
-    await u.message.reply_text("🔋 Battery Capacity (kWh) (ဥပမာ: 60)?")
+    await u.message.reply_text("🔋 Battery Capacity (kWh)?")
     return CAP
 
 async def reg_cap(u: Update, c: ContextTypes.DEFAULT_TYPE):
     c.user_data["c"] = u.message.text
-    await u.message.reply_text("🛣️ Full Range (km) (ဥပမာ: 450)?")
+    await u.message.reply_text("🛣️ Full Range (km)?")
     return RANGE
 
 async def reg_range(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    try:
-        db.save_user(u.effective_user.id, c.user_data["m"], c.user_data["c"], u.message.text)
-        await u.message.reply_text("✅ မှတ်ပုံတင်ပြီးပါပြီ။ /status ကို နှိပ်ကြည့်ပါ။")
-    except Exception as e:
-        logger.error(f"Reg Error: {e}")
-        await u.message.reply_text("Error ဖြစ်သွားပါတယ်။ ပြန်စမ်းကြည့်ပါ။")
+    db.save_user(u.effective_user.id, c.user_data["m"], c.user_data["c"], u.message.text)
+    await u.message.reply_text("✅ မှတ်ပုံတင်ပြီးပါပြီ။", reply_markup=get_main_menu())
     return ConversationHandler.END
 
 # --- Battery Update ---
 async def update_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("🔋 လက်ရှိ Battery % (0-100)?")
+    await u.message.reply_text("🔋 လက်ရှိ Battery %?")
     return PCT
 
 async def update_done(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         pct = int(u.message.text)
         db.update_pct(u.effective_user.id, pct)
-        await u.message.reply_text(f"✅ Battery {pct}% အဖြစ် မှတ်သားပြီးပါပြီ။")
+        await u.message.reply_text(f"✅ Battery {pct}% အဖြစ် မှတ်သားပြီးပါပြီ။", reply_markup=get_main_menu())
     except:
         await u.message.reply_text("ဂဏန်းဖြင့်သာ ရိုက်ထည့်ပါ။")
     return ConversationHandler.END
 
-# --- Tools ---
+# --- Tools (Modified for Callback) ---
 async def status(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    user = db.get_user(u.effective_user.id)
-    if not user: return await u.message.reply_text("/register အရင်လုပ်ပါ။")
+    uid = u.effective_user.id
+    user = db.get_user(uid)
+    msg_obj = u.callback_query.message if u.callback_query else u.message
+    
+    if not user: 
+        return await msg_obj.reply_text("/register အရင်လုပ်ပါ။")
+    
     pct = user[4]
     current_range = (pct / 100) * float(user[3])
-    await u.message.reply_html(f"📊 <b>အခြေအနေ</b>\nModel: {user[1]}\nBattery: {pct}%\n🛣️ မောင်းနိုင်သည့်ခရီး: {current_range:.1f} km")
+    await msg_obj.reply_html(f"📊 <b>အခြေအနေ</b>\nModel: {user[1]}\nBattery: {pct}%\n🛣️ မောင်းနိုင်သည့်ခရီး: {current_range:.1f} km")
 
 async def history(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    try:
-        logs = db.get_logs(u.effective_user.id)
-        if not logs: 
-            return await u.message.reply_text("မှတ်တမ်း မရှိသေးပါ။ /update ကို အရင်လုပ်ပါ။")
-        
-        msg = "📜 <b>နောက်ဆုံးပို့ခဲ့သော မှတ်တမ်းများ:</b>\n\n"
-        for log in logs:
-            # log[4] က date, log[3] က battery % value ပါ
-            date_str = str(log[4])[:16] 
-            pct_val = log[3]
-            msg += f"• {date_str} - <b>{pct_val}%</b>\n"
-            
-        await u.message.reply_html(msg)
-    except Exception as e:
-        logger.error(f"History Error: {e}")
-        await u.message.reply_text("မှတ်တမ်းထုတ်ရာတွင် အမှားရှိနေပါသည်။")
-
+    uid = u.effective_user.id
+    logs = db.get_logs(uid)
+    msg_obj = u.callback_query.message if u.callback_query else u.message
+    
+    if not logs: return await msg_obj.reply_text("မှတ်တမ်း မရှိပါ။")
+    msg = "📜 <b>မှတ်တမ်းများ:</b>\n"
+    for log in logs: msg += f"• {str(log[4])[:16]} - {log[3]}%\n"
+    await msg_obj.reply_html(msg)
 
 async def find_station(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    msg_obj = u.callback_query.message if u.callback_query else u.message
     kb = [[KeyboardButton("📍 တည်နေရာပေးပို့ရန်", request_location=True)]]
-    await u.message.reply_text("တည်နေရာပေးပို့ပါ", reply_markup=ReplyKeyboardMarkup(kb, one_time_keyboard=True, resize_keyboard=True))
+    await msg_obj.reply_text("အနီးဆုံးစခန်းရှာရန် တည်နေရာပေးပို့ပါ", 
+        reply_markup=ReplyKeyboardMarkup(kb, one_time_keyboard=True, resize_keyboard=True))
 
-async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_html("🔌 <b>အနီးဆုံးစခန်းများ:</b>\n1. Earth EV (1.2km)\n2. Charge+ (2.5km)", reply_markup=ReplyKeyboardRemove())
+async def tips(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    msg_obj = u.callback_query.message if u.callback_query else u.message
+    await msg_obj.reply_html("💡 <b>EV Tips:</b>\n• Battery 20%-80% ကြားထားပါ။\n• ညဘက်အားသွင်းရင် စျေးသက်သာပါတယ်။")
 
 async def cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("ဖျက်သိမ်းလိုက်ပါပြီ။", reply_markup=ReplyKeyboardRemove())
+    await u.message.reply_text("ဖျက်သိမ်းလိုက်ပါပြီ။", reply_markup=get_main_menu())
     return ConversationHandler.END
 
 def main():
@@ -105,10 +128,8 @@ def main():
     
     # Handlers
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("history", history))
-    app.add_handler(CommandHandler("findstation", find_station))
-    app.add_handler(MessageHandler(filters.LOCATION, location_handler))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.LOCATION, lambda u, c: u.message.reply_text("🔌 အနီးဆုံးစခန်း: Earth EV (1.2km)", reply_markup=get_main_menu())))
     
     # Conversations
     app.add_handler(ConversationHandler(
