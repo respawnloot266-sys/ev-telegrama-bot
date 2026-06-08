@@ -437,7 +437,11 @@ def main():
     # Application ကို Build လုပ်ခြင်း
     # PTB Version 21+ အတွက် ပိုမိုတည်ငြိမ်သော နည်းလမ်း
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
+       conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("register", register_start)]
+states={
+            CAR_MODEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_car_model)],
+            BATTERY_CAPACITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_battery_capacity)],
     # Commands များ ထည့်သွင်းခြင်း
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("register", register_start))
@@ -454,7 +458,8 @@ def main():
     
     # Registration conversation
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
+   application.add_handler(conv_handler) # ConversationHandler
+application.add_handler(CommandHandler("start", start))
     # Bot ကို စတင်ခြင်း
     print("Bot is starting...")
     application.run_polling(drop_pending_updates=True)
