@@ -1,65 +1,43 @@
-import sqlite3
-from datetime import datetime
+import os
+import logging
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import database as db
 
-DATABASE_NAME = "ev_bot.db"
+# Logging ကို အသေးစိတ် ပြခိုင်းပါမယ်
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    level=logging.DEBUG # DEBUG level ကို ပြောင်းလိုက်ပါပြီ
+)
+logger = logging.getLogger(__name__)
 
-def connect_db():
-    return sqlite3.connect(DATABASE_NAME)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-def init_db():
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY,
-            car_model TEXT,
-            battery_cap REAL,
-            full_range REAL,
-            current_pct INTEGER DEFAULT 100,
-            reg_date DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            action TEXT,
-            value REAL,
-            date DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-    conn.close()
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("DEBUG: /start command received!") # Railway Logs မှာ ပေါ်လာပါလိမ့်မယ်
+    await update.message.reply_text("⚡ EV Helper Bot အလုပ်လုပ်နေပါပြီ! /register ကို နှိပ်ကြည့်ပါ။")
 
-def save_user(uid, model, cap, frange):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO users (id, car_model, battery_cap, full_range) VALUES (?,?,?,?)", (uid, model, cap, frange))
-    conn.commit()
-    conn.close()
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ဘာစာပို့ပို့ ပြန်ပြောခိုင်းကြည့်ပါမယ် (Test လုပ်ဖို့ပါ)
+    print(f"DEBUG: Message received: {update.message.text}")
+    await update.message.reply_text(f"သင် ပို့လိုက်တဲ့စာက: {update.message.text}")
 
-def get_user(uid):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE id = ?", (uid,))
-    res = cursor.fetchone()
-    conn.close()
-    return res
+def main():
+    if not TELEGRAM_BOT_TOKEN:
+        print("CRITICAL ERROR: TELEGRAM_BOT_TOKEN is missing!")
+        return
 
-def update_pct(uid, pct):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET current_pct = ? WHERE id = ?", (pct, uid))
-    cursor.execute("INSERT INTO logs (user_id, action, value) VALUES (?, 'update_pct', ?)", (uid, pct))
-    conn.commit()
-    conn.close()
+    # Application ကို တည်ဆောက်ပါ
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    # အခြေခံ Handler များ
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    
+    print("Bot is starting and polling...")
+    
+    # drop_pending_updates=True က စာဟောင်းတွေ ပိတ်နေရင် ဖယ်ပေးပါလိမ့်မယ်
+    app.run_polling(drop_pending_updates=True)
 
-def get_logs(uid):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM logs WHERE user_id = ? ORDER BY date DESC LIMIT 10", (uid,))
-    res = cursor.fetchall()
-    conn.close()
-    return res
-
-init_db()
+if __name__ == "__main__":
+    main()
