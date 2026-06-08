@@ -428,76 +428,36 @@ async def error_handler(update: Update, context) -> None:
         "တစ်ခုခု မှားယွင်းသွားပါသည်။ ကျေးဇူးပြု၍ နောက်မှ ထပ်ကြိုးစားပါ။"
     )
 
-def main() -> None:
-    """Start the bot."""
-    # Initialize database
-    init_db()
+def main():
+    # Variables စစ်ဆေးခြင်း
+    if not TELEGRAM_BOT_TOKEN:
+        print("Error: TELEGRAM_BOT_TOKEN is missing!")
+        return
 
-    # Create the Application and pass it your bot's token.
+    # Application ကို Build လုပ်ခြင်း
+    # PTB Version 21+ အတွက် ပိုမိုတည်ငြိမ်သော နည်းလမ်း
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Register conversation handlers
-    reg_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("register", register_start)],
-        states={
-            CAR_MODEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_car_model)],
-            BATTERY_CAPACITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_battery_capacity)],
-            FULL_CHARGE_RANGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_full_charge_range)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    application.add_handler(reg_conv_handler)
-
-    battery_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("battery", battery_status_start)],
-        states={
-            CURRENT_BATTERY_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, battery_status_update)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    application.add_handler(battery_conv_handler)
-
-    charge_log_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("chargecomplete", charge_log_start)],
-        states={
-            CHARGE_START_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, charge_log_get_start_percent)],
-            CHARGE_END_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, charge_log_get_end_percent)],
-            CHARGE_STATION_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, charge_log_get_station_name)],
-            CHARGE_COST: [MessageHandler(filters.TEXT & ~filters.COMMAND, charge_log_get_cost)],
-            CHARGE_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, charge_log_complete)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    application.add_handler(charge_log_conv_handler)
-
-    charge_time_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("chargetime", charge_time_start)],
-        states={
-            CHARGE_TIME_START_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, charge_time_get_start_percent)],
-            CHARGE_TIME_TARGET_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, charge_time_calculate)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    application.add_handler(charge_time_conv_handler)
-
-    # Register other command handlers
+    # Commands များ ထည့်သွင်းခြင်း
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("register", register))
+    application.add_handler(CommandHandler("battery", battery_update))
     application.add_handler(CommandHandler("findstation", find_station))
-    application.add_handler(CommandHandler("history", view_history))
+    application.add_handler(CommandHandler("chargetime", charge_time_calc))
+    application.add_handler(CommandHandler("chargecomplete", charge_complete))
+    application.add_handler(CommandHandler("history", history))
     application.add_handler(CommandHandler("monthlyreport", monthly_report))
-    application.add_handler(CommandHandler("battery_tips", battery_tips))
-    application.add_handler(CommandHandler("offpeak", off_peak_reminder))
-    application.add_handler(CommandHandler("service", service_reminder))
-    application.add_handler(CommandHandler("tyrepressure", tyre_pressure_reminder))
+    application.add_handler(CommandHandler("tips", tips))
+    
+    # Location handler
+    application.add_handler(MessageHandler(filters.LOCATION, handle_location))
+    
+    # Registration conversation
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Handle location messages
-    application.add_handler(MessageHandler(filters.LOCATION, receive_location))
-
-    # Log all errors
-    application.add_error_handler(error_handler)
-
-    # Run the bot until the user presses Ctrl-C
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Bot ကို စတင်ခြင်း
+    print("Bot is starting...")
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
