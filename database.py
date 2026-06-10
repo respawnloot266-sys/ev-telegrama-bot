@@ -56,7 +56,6 @@ def init_db():
         )
     """)
 
-    # Subscriptions table
     c.execute("""
         CREATE TABLE IF NOT EXISTS subscriptions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,7 +67,6 @@ def init_db():
         )
     """)
 
-    # Pending payments table
     c.execute("""
         CREATE TABLE IF NOT EXISTS pending_payments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,6 +76,33 @@ def init_db():
             screenshot_file_id TEXT,
             status TEXT DEFAULT 'pending',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
+    # Smart Reminders
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            reminder_type TEXT,
+            value TEXT,
+            note TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
+    # Expense Tracker
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            category TEXT,
+            amount INTEGER,
+            note TEXT,
+            date DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
@@ -114,7 +139,6 @@ def get_language(uid):
 
 # --- SUBSCRIPTION ---
 def get_plan(uid):
-    """user ရဲ့ plan ရယူတယ် — free / premium"""
     conn = connect_db()
     c = conn.cursor()
     c.execute("SELECT plan, expire_date FROM subscriptions WHERE user_id = ?", (uid,))
@@ -125,7 +149,7 @@ def get_plan(uid):
     plan, expire_date = res
     if plan == "premium" and expire_date:
         if datetime.now() > datetime.fromisoformat(expire_date):
-            return "free"  # Expired
+            return "free"
     return plan
 
 def is_premium(uid):
@@ -136,25 +160,18 @@ def activate_premium(uid, months=1):
     c = conn.cursor()
     get_or_create_user(uid)
     now = datetime.now()
-    # ရှိပြီးသား expire date ကနေ extend လုပ်တယ်
     c.execute("SELECT expire_date FROM subscriptions WHERE user_id = ?", (uid,))
     res = c.fetchone()
     if res and res[0]:
         try:
             current_expire = datetime.fromisoformat(res[0])
-            if current_expire > now:
-                new_expire = current_expire + timedelta(days=30 * months)
-            else:
-                new_expire = now + timedelta(days=30 * months)
+            new_expire = current_expire + timedelta(days=30*months) if current_expire > now else now + timedelta(days=30*months)
         except:
-            new_expire = now + timedelta(days=30 * months)
+            new_expire = now + timedelta(days=30*months)
     else:
-        new_expire = now + timedelta(days=30 * months)
-
-    c.execute("""
-        INSERT OR REPLACE INTO subscriptions (user_id, plan, start_date, expire_date)
-        VALUES (?, 'premium', ?, ?)
-    """, (uid, now.isoformat(), new_expire.isoformat()))
+        new_expire = now + timedelta(days=30*months)
+    c.execute("INSERT OR REPLACE INTO subscriptions (user_id, plan, start_date, expire_date) VALUES (?, 'premium', ?, ?)",
+              (uid, now.isoformat(), new_expire.isoformat()))
     conn.commit()
     conn.close()
     return new_expire
@@ -170,8 +187,7 @@ def get_expire_date(uid):
 def get_premium_users_count():
     conn = connect_db()
     c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM subscriptions WHERE plan = 'premium' AND expire_date > ?",
-              (datetime.now().isoformat(),))
+    c.execute("SELECT COUNT(*) FROM subscriptions WHERE plan='premium' AND expire_date > ?", (datetime.now().isoformat(),))
     res = c.fetchone()
     conn.close()
     return res[0] if res else 0
@@ -188,10 +204,8 @@ def get_total_users_count():
 def add_pending_payment(uid, amount, months, screenshot_file_id):
     conn = connect_db()
     c = conn.cursor()
-    c.execute("""
-        INSERT INTO pending_payments (user_id, amount, months, screenshot_file_id)
-        VALUES (?, ?, ?, ?)
-    """, (uid, amount, months, screenshot_file_id))
+    c.execute("INSERT INTO pending_payments (user_id, amount, months, screenshot_file_id) VALUES (?, ?, ?, ?)",
+              (uid, amount, months, screenshot_file_id))
     payment_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -215,7 +229,7 @@ def update_payment_status(payment_id, status):
 def get_all_pending_payments():
     conn = connect_db()
     c = conn.cursor()
-    c.execute("SELECT * FROM pending_payments WHERE status = 'pending' ORDER BY created_at DESC")
+    c.execute("SELECT * FROM pending_payments WHERE status='pending' ORDER BY created_at DESC")
     res = c.fetchall()
     conn.close()
     return res
@@ -228,10 +242,8 @@ def add_car(uid, car_name, model, cap, frange, charge_rate=50):
     c.execute("SELECT COUNT(*) FROM cars WHERE user_id = ?", (uid,))
     count = c.fetchone()[0]
     is_active = 1 if count == 0 else 0
-    c.execute("""
-        INSERT INTO cars (user_id, car_name, car_model, battery_cap, full_range, charge_rate, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (uid, car_name, model, cap, frange, charge_rate, is_active))
+    c.execute("INSERT INTO cars (user_id, car_name, car_model, battery_cap, full_range, charge_rate, is_active) VALUES (?,?,?,?,?,?,?)",
+              (uid, car_name, model, cap, frange, charge_rate, is_active))
     conn.commit()
     conn.close()
 
@@ -280,10 +292,8 @@ def update_pct(uid, pct):
     car = get_active_car(uid)
     if car:
         c.execute("UPDATE cars SET current_pct = ? WHERE id = ?", (pct, car[0]))
-        c.execute(
-            "INSERT INTO logs (user_id, car_id, action, value) VALUES (?, ?, ?, ?)",
-            (uid, car[0], 'update_pct', pct)
-        )
+        c.execute("INSERT INTO logs (user_id, car_id, action, value) VALUES (?,?,?,?)",
+                  (uid, car[0], 'update_pct', pct))
     conn.commit()
     conn.close()
 
@@ -296,15 +306,11 @@ def get_logs(uid, days=None):
         return []
     if days:
         since = (datetime.now() - timedelta(days=days)).isoformat()
-        c.execute(
-            "SELECT * FROM logs WHERE user_id = ? AND car_id = ? AND date > ? ORDER BY date DESC LIMIT 10",
-            (uid, car[0], since)
-        )
+        c.execute("SELECT * FROM logs WHERE user_id=? AND car_id=? AND date>? ORDER BY date DESC LIMIT 10",
+                  (uid, car[0], since))
     else:
-        c.execute(
-            "SELECT * FROM logs WHERE user_id = ? AND car_id = ? ORDER BY date DESC LIMIT 10",
-            (uid, car[0])
-        )
+        c.execute("SELECT * FROM logs WHERE user_id=? AND car_id=? ORDER BY date DESC LIMIT 10",
+                  (uid, car[0]))
     res = c.fetchall()
     conn.close()
     return res
@@ -322,10 +328,8 @@ def add_favorite(uid, name, address, lat, lon):
     conn = connect_db()
     c = conn.cursor()
     get_or_create_user(uid)
-    c.execute("""
-        INSERT INTO favorites (user_id, station_name, address, latitude, longitude)
-        VALUES (?, ?, ?, ?, ?)
-    """, (uid, name, address, lat, lon))
+    c.execute("INSERT INTO favorites (user_id, station_name, address, latitude, longitude) VALUES (?,?,?,?,?)",
+              (uid, name, address, lat, lon))
     conn.commit()
     conn.close()
 
@@ -340,8 +344,54 @@ def get_favorites(uid):
 def delete_favorite(uid, fav_id):
     conn = connect_db()
     c = conn.cursor()
-    c.execute("DELETE FROM favorites WHERE id = ? AND user_id = ?", (fav_id, uid))
+    c.execute("DELETE FROM favorites WHERE id=? AND user_id=?", (fav_id, uid))
     conn.commit()
     conn.close()
+
+# --- REMINDERS ---
+def add_reminder(uid, reminder_type, value, note=""):
+    conn = connect_db()
+    c = conn.cursor()
+    get_or_create_user(uid)
+    c.execute("INSERT INTO reminders (user_id, reminder_type, value, note) VALUES (?,?,?,?)",
+              (uid, reminder_type, value, note))
+    conn.commit()
+    conn.close()
+
+def get_reminders(uid):
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM reminders WHERE user_id=? AND is_active=1", (uid,))
+    res = c.fetchall()
+    conn.close()
+    return res
+
+def delete_reminder(uid, reminder_id):
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("UPDATE reminders SET is_active=0 WHERE id=? AND user_id=?", (reminder_id, uid))
+    conn.commit()
+    conn.close()
+
+# --- EXPENSES ---
+def add_expense(uid, category, amount, note=""):
+    conn = connect_db()
+    c = conn.cursor()
+    get_or_create_user(uid)
+    c.execute("INSERT INTO expenses (user_id, category, amount, note) VALUES (?,?,?,?)",
+              (uid, category, amount, note))
+    conn.commit()
+    conn.close()
+
+def get_monthly_expenses(uid, year, month):
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("""SELECT * FROM expenses WHERE user_id=?
+                 AND strftime('%Y', date)=? AND strftime('%m', date)=?
+                 ORDER BY date DESC""",
+              (uid, str(year), f"{month:02d}"))
+    res = c.fetchall()
+    conn.close()
+    return res
 
 init_db()
