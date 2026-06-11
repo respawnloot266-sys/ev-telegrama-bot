@@ -54,16 +54,7 @@ CAR_CHARGE_RATES = {
     "toyota bz4x": 150, "mg zs ev": 90,
 }
 
-MYANMAR_CITIES = {
-    "yangon":    (16.8409, 96.1735),
-    "mandalay":  (21.9588, 96.0891),
-    "naypyidaw": (19.7475, 96.1297),
-    "bago":      (17.3364, 96.4817),
-    "taungoo":   (18.9500, 96.4333),
-    "meiktila":  (20.8833, 95.8667),
-    "pyay":      (18.8247, 95.2274),
-    "mawlamyine":(16.4900, 97.6280),
-}
+# MYANMAR_CITIES ဖယ်ရှားပြီး geocoding သုံးတယ်
 
 def get_charge_rate(model):
     return CAR_CHARGE_RATES.get(model.lower().strip(), 50)
@@ -507,7 +498,6 @@ async def route_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     msg_obj = u.callback_query.message if u.callback_query else u.message
     if u.callback_query: await u.callback_query.answer()
 
-    # FIXED: Premium check — must send message and return END if not premium
     if not db.is_premium(uid):
         ok, data = check_premium(uid, lang)
         await msg_obj.reply_html(data[0], reply_markup=data[1])
@@ -518,35 +508,67 @@ async def route_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await msg_obj.reply_text(utils.t(lang, "no_car"), reply_markup=get_main_menu(lang))
         return ConversationHandler.END
 
-    cities_list = " | ".join([c.title() for c in MYANMAR_CITIES.keys()])
     await msg_obj.reply_text(
-        f"🗺️ ထွက်ခွာမြို့ ရိုက်ပါ။\n\n{cities_list}" if lang == "MM"
-        else f"🗺️ Enter origin city.\n\n{cities_list}")
+        "🗺️ ထွက်ခွာမြို့ ရိုက်ပါ။\n(ဥပမာ: Yangon, Mandalay, Bago ...)"
+        if lang == "MM" else
+        "🗺️ Enter origin city.\n(e.g. Yangon, Mandalay, Bago ...)")
     return S_RT_FROM
 
 async def route_get_from(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(u.effective_user.id)
-    city = u.message.text.strip().lower()
-    if city not in MYANMAR_CITIES:
-        cities_list = " | ".join([c.title() for c in MYANMAR_CITIES.keys()])
-        await u.message.reply_text(f"❌ မတွေ့ပါ။ ဒီမြို့တွေထဲမှ ရွေးပါ:\n{cities_list}")
+    city_input = u.message.text.strip()
+
+    loading = await u.message.reply_text("🔍 မြို့ ရှာဖွေနေပါသည်..." if lang == "MM" else "🔍 Looking up city...")
+    lat, lon, display_name = charge_api.geocode_city(city_input)
+    await loading.delete()
+
+    if lat is None:
+        await u.message.reply_text(
+            f"❌ '{city_input}' မြို့ မတွေ့ပါ။ မြန်မာ မြို့နာမည် အင်္ဂလိပ်လို ရိုက်ပါ။"
+            if lang == "MM" else
+            f"❌ City '{city_input}' not found. Try English name (e.g. Yangon).")
         return S_RT_FROM
-    c.user_data["rt_from"] = city
-    await u.message.reply_text("🏁 ဆုံးမှတ်မြို့ ရိုက်ပါ။" if lang == "MM" else "🏁 Enter destination city.")
+
+    c.user_data["rt_from"] = city_input
+    c.user_data["rt_from_lat"] = lat
+    c.user_data["rt_from_lon"] = lon
+    c.user_data["rt_from_name"] = display_name.split(",")[0]
+
+    await u.message.reply_text(
+        f"✅ {display_name.split(',')[0]} တွေ့ပါပြီ!\n\n🏁 ဆုံးမှတ်မြို့ ရိုက်ပါ။"
+        if lang == "MM" else
+        f"✅ Found: {display_name.split(',')[0]}\n\n🏁 Enter destination city.")
     return S_RT_TO
 
 async def route_get_to(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(u.effective_user.id)
-    city = u.message.text.strip().lower()
-    if city not in MYANMAR_CITIES:
-        cities_list = " | ".join([c.title() for c in MYANMAR_CITIES.keys()])
-        await u.message.reply_text(f"❌ မတွေ့ပါ။ ဒီမြို့တွေထဲမှ ရွေးပါ:\n{cities_list}")
+    city_input = u.message.text.strip()
+
+    loading = await u.message.reply_text("🔍 မြို့ ရှာဖွေနေပါသည်..." if lang == "MM" else "🔍 Looking up city...")
+    lat, lon, display_name = charge_api.geocode_city(city_input)
+    await loading.delete()
+
+    if lat is None:
+        await u.message.reply_text(
+            f"❌ '{city_input}' မြို့ မတွေ့ပါ။ မြန်မာ မြို့နာမည် အင်္ဂလိပ်လို ရိုက်ပါ။"
+            if lang == "MM" else
+            f"❌ City '{city_input}' not found. Try English name.")
         return S_RT_TO
-    if city == c.user_data.get("rt_from"):
-        await u.message.reply_text("❌ ထွက်မြို့နဲ့ ဆုံးမြို့ မတူညီရပါ။")
+
+    from_name = c.user_data.get("rt_from_name", "")
+    if display_name.split(",")[0].lower() == from_name.lower():
+        await u.message.reply_text("❌ ထွက်မြို့နဲ့ ဆုံးမြို့ မတူညီရပါ။" if lang == "MM" else "❌ Origin and destination must be different.")
         return S_RT_TO
-    c.user_data["rt_to"] = city
-    await u.message.reply_text("🔋 လက်ရှိ Battery % ရိုက်ပါ။" if lang == "MM" else "🔋 Enter current battery %")
+
+    c.user_data["rt_to"] = city_input
+    c.user_data["rt_to_lat"] = lat
+    c.user_data["rt_to_lon"] = lon
+    c.user_data["rt_to_name"] = display_name.split(",")[0]
+
+    await u.message.reply_text(
+        f"✅ {display_name.split(',')[0]} တွေ့ပါပြီ!\n\n🔋 လက်ရှိ Battery % ရိုက်ပါ။"
+        if lang == "MM" else
+        f"✅ Found: {display_name.split(',')[0]}\n\n🔋 Enter current battery %")
     return S_RT_PCT
 
 async def route_calculate(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -561,31 +583,37 @@ async def route_calculate(u: Update, c: ContextTypes.DEFAULT_TYPE):
         battery_cap = float(car[4])
         charge_rate = get_charge_rate(car[3])
 
-        from_city = c.user_data["rt_from"]
-        to_city = c.user_data["rt_to"]
-        from_coords = MYANMAR_CITIES[from_city]
-        to_coords = MYANMAR_CITIES[to_city]
+        from_name = c.user_data["rt_from_name"]
+        to_name = c.user_data["rt_to_name"]
+        from_lat = c.user_data["rt_from_lat"]
+        from_lon = c.user_data["rt_from_lon"]
+        to_lat = c.user_data["rt_to_lat"]
+        to_lon = c.user_data["rt_to_lon"]
 
-        total_distance = utils.calculate_distance(
-            from_coords[0], from_coords[1], to_coords[0], to_coords[1])
+        total_distance = utils.calculate_distance(from_lat, from_lon, to_lat, to_lon)
         current_range = full_range * (current_pct / 100)
+
+        # Google Maps link for full route
+        gmaps_route = f"https://www.google.com/maps/dir/?api=1&origin={from_lat},{from_lon}&destination={to_lat},{to_lon}"
 
         if current_range >= total_distance * 1.1:
             remaining_pct = max(0, current_pct - int(total_distance / full_range * 100))
             if lang == "MM":
                 msg = (f"🗺️ <b>Route Plan</b>\n\n"
-                       f"📍 {from_city.title()} → {to_city.title()}\n"
+                       f"📍 {from_name} → {to_name}\n"
                        f"📏 ခရီးဝေး: <b>{total_distance:.0f} km</b>\n"
                        f"🔋 Range: <b>{current_range:.0f} km</b>\n\n"
                        f"✅ <b>တစ်ကြိမ်တည်း မောင်းနိုင်သည်!</b>\n"
-                       f"ဆုံးမှတ်ရောက်ရင် Battery: ~{remaining_pct}% ကျန်မည်")
+                       f"ဆုံးမှတ်ရောက်ရင် Battery: ~{remaining_pct}% ကျန်မည်\n\n"
+                       f"<a href=\"{gmaps_route}\">🗺️ Google Maps တွင် ကြည့်ရန်</a>")
             else:
                 msg = (f"🗺️ <b>Route Plan</b>\n\n"
-                       f"📍 {from_city.title()} → {to_city.title()}\n"
+                       f"📍 {from_name} → {to_name}\n"
                        f"📏 Distance: <b>{total_distance:.0f} km</b>\n"
                        f"🔋 Range: <b>{current_range:.0f} km</b>\n\n"
                        f"✅ <b>Can reach without charging!</b>\n"
-                       f"Est. remaining: ~{remaining_pct}%")
+                       f"Est. remaining: ~{remaining_pct}%\n\n"
+                       f"<a href=\"{gmaps_route}\">🗺️ View on Google Maps</a>")
         else:
             safe_range = full_range * 0.75
             stops_needed = max(1, int(total_distance / safe_range))
@@ -595,32 +623,42 @@ async def route_calculate(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
             if lang == "MM":
                 msg = (f"🗺️ <b>Route Plan</b>\n\n"
-                       f"📍 {from_city.title()} → {to_city.title()}\n"
+                       f"📍 {from_name} → {to_name}\n"
                        f"📏 ခရီးဝေး: <b>{total_distance:.0f} km</b>\n"
                        f"🔋 Range: <b>{current_range:.0f} km</b>\n\n"
                        f"⚡ <b>Charging Stop {stops_needed} ကြိမ် လိုသည်</b>\n\n")
                 for i in range(stops_needed):
                     dist = stop_every_km * (i + 1)
-                    msg += f"🔌 Stop {i+1}: {from_city.title()} မှ <b>{dist:.0f} km</b>\n"
+                    # Midpoint coords for stop
+                    stop_lat = from_lat + (to_lat - from_lat) * (i + 1) / (stops_needed + 1)
+                    stop_lon = from_lon + (to_lon - from_lon) * (i + 1) / (stops_needed + 1)
+                    stop_link = f"https://www.google.com/maps/search/?api=1&query={stop_lat:.4f},{stop_lon:.4f}"
+                    msg += f"🔌 Stop {i+1}: {from_name} မှ <b>{dist:.0f} km</b> — <a href=\"{stop_link}\">Station ရှာ</a>\n"
                 msg += (f"\n📋 <b>အကြံပြုချက်:</b>\n"
                         f"• Stop တိုင်းမှာ <b>{charge_to_pct}%</b> အထိ အားသွင်းပါ\n"
                         f"• တစ် Stop ကြာချိန်: ~<b>{utils.format_charge_time(charge_time)}</b>\n"
-                        f"• ခရီးဆုံး Battery: ~20% ကျန်မည်")
+                        f"• ခရီးဆုံး Battery: ~20% ကျန်မည်\n\n"
+                        f"<a href=\"{gmaps_route}\">🗺️ Google Maps တွင် ကြည့်ရန်</a>")
             else:
                 msg = (f"🗺️ <b>Route Plan</b>\n\n"
-                       f"📍 {from_city.title()} → {to_city.title()}\n"
+                       f"📍 {from_name} → {to_name}\n"
                        f"📏 Distance: <b>{total_distance:.0f} km</b>\n"
-                       f"🔋 Current Range: <b>{current_range:.0f} km</b>\n\n"
+                       f"🔋 Range: <b>{current_range:.0f} km</b>\n\n"
                        f"⚡ <b>Need {stops_needed} charging stop(s)</b>\n\n")
                 for i in range(stops_needed):
                     dist = stop_every_km * (i + 1)
-                    msg += f"🔌 Stop {i+1}: <b>{dist:.0f} km</b> from {from_city.title()}\n"
+                    stop_lat = from_lat + (to_lat - from_lat) * (i + 1) / (stops_needed + 1)
+                    stop_lon = from_lon + (to_lon - from_lon) * (i + 1) / (stops_needed + 1)
+                    stop_link = f"https://www.google.com/maps/search/?api=1&query={stop_lat:.4f},{stop_lon:.4f}"
+                    msg += f"🔌 Stop {i+1}: <b>{dist:.0f} km</b> from {from_name} — <a href=\"{stop_link}\">Find Station</a>\n"
                 msg += (f"\n📋 <b>Recommendations:</b>\n"
                         f"• Charge to <b>{charge_to_pct}%</b> at each stop\n"
                         f"• ~<b>{utils.format_charge_time(charge_time)}</b> per stop\n"
-                        f"• Arrive with ~20% remaining")
+                        f"• Arrive with ~20% remaining\n\n"
+                        f"<a href=\"{gmaps_route}\">🗺️ View on Google Maps</a>")
 
-        await u.message.reply_html(msg, reply_markup=InlineKeyboardMarkup([back_row(lang)]))
+        await u.message.reply_html(msg, disable_web_page_preview=True,
+                                    reply_markup=InlineKeyboardMarkup([back_row(lang)]))
         return ConversationHandler.END
 
     except ValueError:
