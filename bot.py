@@ -54,7 +54,21 @@ CAR_CHARGE_RATES = {
     "toyota bz4x": 150, "mg zs ev": 90,
 }
 
-# MYANMAR_CITIES ဖယ်ရှားပြီး geocoding သုံးတယ်
+# Myanmar city name mapping (မြန်မာဘာသာ → English)
+MM_CITY_MAP = {
+    "ရန်ကုန်": "Yangon", "မန္တလေး": "Mandalay", "နေပြည်တော်": "Naypyidaw",
+    "ပဲခူး": "Bago", "တောင်ငူ": "Taungoo", "ပြည်": "Pyay",
+    "မော်လမြိုင်": "Mawlamyine", "မိုင်းဆတ်": "Mong Hsat",
+    "တာချီလိတ်": "Tachileik", "ကျိုင်းတုံ": "Kengtung",
+    "လွိုင်ကော်": "Loikaw", "မိတ္ထီလာ": "Meiktila",
+    "စစ်ကိုင်း": "Sagaing", "မုံရွာ": "Monywa",
+    "ကလေး": "Kalay", "ဘားအံ": "Hpa-An",
+    "ထားဝယ်": "Dawei", "မြိတ်": "Myeik",
+    "သထုံ": "Thaton", "ကျောက်ဆည်": "Kyaukse",
+    "အင်းဝ": "Inwa", "ပင်လောင်း": "Pinlaung",
+    "လင်းခေး": "Linkhe", "ဟားခါး": "Hakha",
+    "ဖလမ်း": "Falam", "မင်းတပ်": "Mindat",
+}
 
 def get_charge_rate(model):
     return CAR_CHARGE_RATES.get(model.lower().strip(), 50)
@@ -429,12 +443,9 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     is_prem = db.is_premium(uid)
 
-    footer_kb = []
-    if not is_prem:
-        footer_kb.append([InlineKeyboardButton("⭐ Favorites သိမ်းဖို့ Premium လိုသည်", callback_data="upgrade")])
-    footer_kb.append(back_row(lang))
-
-    all_stations_msg = f"🔌 <b>အနီးဆုံး Station {len(stations[:5])} ခု တွေ့ပါသည်:</b>\n\n" if lang == "MM" else f"🔌 <b>Found {len(stations[:5])} nearby stations:</b>\n\n"
+    # Send each station as separate message to avoid HTML length/parse issues
+    header = f"🔌 <b>အနီးဆုံး Station {len(stations[:5])} ခု တွေ့ပါသည်:</b>" if lang == "MM" else f"🔌 <b>Found {len(stations[:5])} nearby stations:</b>"
+    await u.message.reply_html(header)
 
     for i, station in enumerate(stations[:5]):
         try:
@@ -454,11 +465,15 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
             if conns:
                 details = []
                 for cn in conns[:4]:
-                    ct = cn.get("connectionType", {}).get("title", "Unknown")
-                    pw = cn.get("powerKW")
-                    pw_str = f"{pw}kW" if pw else "?"
-                    details.append(f"{html_lib.escape(str(ct))} ({pw_str})")
-                conn_text = f"\n   ⚡ {", ".join(details)}"
+                    try:
+                        ct = str(cn.get("connectionType", {}).get("title", "Unknown") or "Unknown")
+                        pw = cn.get("powerKW")
+                        pw_str = f"{int(pw)}kW" if pw else "?"
+                        details.append(f"{html_lib.escape(ct)} ({pw_str})")
+                    except:
+                        continue
+                if details:
+                    conn_text = f"\n   ⚡ {', '.join(details)}"
 
             addr_text = f"\n   📍 {address}" if address else ""
 
@@ -467,40 +482,31 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                    f"{conn_text}\n"
                    f"   <a href=\"{maps_link}\">🗺️ Navigate</a> | <a href=\"{view_link}\">📌 View on Map</a>")
 
-            # Keyboard for this station (Save to Favorites)
-            station_kb_row = []
+            # Keyboard for this station
+            station_kb = []
             if is_prem:
                 raw_name = str(info.get("title", "Unknown"))[:20]
                 raw_addr = str(info.get("addressLine1", "") or "N/A")[:30]
-                cb = f"save_fav_|"{raw_name}|"{raw_addr}|"{s_lat}|"{s_lon}"
-                station_kb_row.append(InlineKeyboardButton(f"⭐ Save to Favorites", callback_data=cb))
-            
-            # Add station-specific keyboard if available
-            if station_kb_row:
-                # For now, we will just append the text and send one main keyboard at the end.
-                # If individual station keyboards are needed, this logic needs to be re-evaluated.
-                pass # Do nothing for now, as we are sending one combined message
+                cb = f"save_fav_|{raw_name}|{raw_addr}|{s_lat}|{s_lon}"
+                station_kb.append([InlineKeyboardButton(f"⭐ Save to Favorites", callback_data=cb)])
 
-            all_stations_msg += msg + "\n\n" # Add each station\'s details to a single message
+            await u.message.reply_html(
+                msg,
+                disable_web_page_preview=True,
+                reply_markup=InlineKeyboardMarkup(station_kb) if station_kb else None)
 
         except Exception as e:
             logger.error(f"Station {i} send error: {e}")
             continue
 
-    # Send all stations in one message with the footer keyboard
-    if all_stations_msg:
-        await u.message.reply_html(
-            all_stations_msg,
-            disable_web_page_preview=True,
-            reply_markup=InlineKeyboardMarkup(footer_kb)
-        )
-    else:
-        await u.message.reply_text(
-            "😔 သင့်အနီးတွင် Station မတွေ့ပါ။" if lang == "MM" else "😔 No stations found nearby.",
-            reply_markup=get_main_menu(lang)
-        )
-
-
+    # Final menu
+    footer_kb = []
+    if not is_prem:
+        footer_kb.append([InlineKeyboardButton("⭐ Favorites သိမ်းဖို့ Premium လိုသည်", callback_data="upgrade")])
+    footer_kb.append(back_row(lang))
+    await u.message.reply_text(
+        "✅ ရှာဖွေမှု ပြီးပါပြီ။" if lang == "MM" else "✅ Search complete.",
+        reply_markup=InlineKeyboardMarkup(footer_kb))
 
 # ================================================================
 # ROUTE PLANNER (Premium) — FIXED
@@ -527,22 +533,27 @@ async def route_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
         "🗺️ Enter origin city.\n(e.g. Yangon, Mandalay, Bago ...)")
     return S_RT_FROM
 
+def resolve_city_name(city_input):
+    """မြန်မာဘာသာ သို့မဟုတ် အင်္ဂလိပ် မြို့နာမည် ကို geocode လုပ်တယ်"""
+    # မြန်မာဘာသာ mapping စစ်တယ်
+    eng_name = MM_CITY_MAP.get(city_input.strip(), city_input.strip())
+    return charge_api.geocode_city(eng_name)
+
 async def route_get_from(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(u.effective_user.id)
     city_input = u.message.text.strip()
 
     loading = await u.message.reply_text("🔍 မြို့ ရှာဖွေနေပါသည်..." if lang == "MM" else "🔍 Looking up city...")
-    lat, lon, display_name = charge_api.geocode_city(city_input)
+    lat, lon, display_name = resolve_city_name(city_input)
     await loading.delete()
 
     if lat is None:
         await u.message.reply_text(
-            f"❌ '{city_input}' မြို့ မတွေ့ပါ။ မြန်မာ မြို့နာမည် အင်္ဂလိပ်လို ရိုက်ပါ။"
+            f"❌ '{city_input}' မတွေ့ပါ။\nဥပမာ: ရန်ကုန်, မန္တလေး, Yangon, Mandalay"
             if lang == "MM" else
-            f"❌ City '{city_input}' not found. Try English name (e.g. Yangon).")
+            f"❌ '{city_input}' not found.\nExample: Yangon, Mandalay, Bago")
         return S_RT_FROM
 
-    c.user_data["rt_from"] = city_input
     c.user_data["rt_from_lat"] = lat
     c.user_data["rt_from_lon"] = lon
     c.user_data["rt_from_name"] = display_name.split(",")[0]
@@ -558,14 +569,14 @@ async def route_get_to(u: Update, c: ContextTypes.DEFAULT_TYPE):
     city_input = u.message.text.strip()
 
     loading = await u.message.reply_text("🔍 မြို့ ရှာဖွေနေပါသည်..." if lang == "MM" else "🔍 Looking up city...")
-    lat, lon, display_name = charge_api.geocode_city(city_input)
+    lat, lon, display_name = resolve_city_name(city_input)
     await loading.delete()
 
     if lat is None:
         await u.message.reply_text(
-            f"❌ '{city_input}' မြို့ မတွေ့ပါ။ မြန်မာ မြို့နာမည် အင်္ဂလိပ်လို ရိုက်ပါ။"
+            f"❌ '{city_input}' မတွေ့ပါ။\nဥပမာ: ရန်ကုန်, မန္တလေး, Yangon, Mandalay"
             if lang == "MM" else
-            f"❌ City '{city_input}' not found. Try English name.")
+            f"❌ '{city_input}' not found.\nExample: Yangon, Mandalay, Bago")
         return S_RT_TO
 
     from_name = c.user_data.get("rt_from_name", "")
@@ -573,7 +584,6 @@ async def route_get_to(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text("❌ ထွက်မြို့နဲ့ ဆုံးမြို့ မတူညီရပါ။" if lang == "MM" else "❌ Origin and destination must be different.")
         return S_RT_TO
 
-    c.user_data["rt_to"] = city_input
     c.user_data["rt_to_lat"] = lat
     c.user_data["rt_to_lon"] = lon
     c.user_data["rt_to_name"] = display_name.split(",")[0]
@@ -643,38 +653,10 @@ async def route_calculate(u: Update, c: ContextTypes.DEFAULT_TYPE):
                 for i in range(stops_needed):
                     dist = stop_every_km * (i + 1)
                     # Midpoint coords for stop
-                    # Find actual nearby stations for the stop
                     stop_lat = from_lat + (to_lat - from_lat) * (i + 1) / (stops_needed + 1)
                     stop_lon = from_lon + (to_lon - from_lon) * (i + 1) / (stops_needed + 1)
-                    
-                    nearby_stops = charge_api.get_nearby_charging_stations(stop_lat, stop_lon, distance=5, max_results=1)
-                    if nearby_stops:
-                        stop_station = nearby_stops[0]
-                        stop_info = stop_station.get("addressInfo", {})
-                        stop_name = html_lib.escape(str(stop_info.get("title", "Unknown"))[:60])
-                        stop_address = html_lib.escape(str(stop_info.get("addressLine1", "") or "")[:100])
-                        stop_maps_link = f"https://www.google.com/maps/dir/?api=1&destination={stop_info.get("latitude")},{stop_info.get("longitude")}"
-                        stop_view_link = f"https://www.google.com/maps/search/?api=1&query={stop_info.get("latitude")},{stop_info.get("longitude")}"
-
-                        stop_conns = stop_station.get("connections", [])
-                        stop_conn_text = ""
-                        if stop_conns:
-                            stop_details = []
-                            for cn in stop_conns[:2]: # Limit to 2 connection types for brevity
-                                ct = cn.get("connectionType", {}).get("title", "Unknown")
-                                pw = cn.get("powerKW")
-                                pw_str = f"{pw}kW" if pw else "?"
-                                stop_details.append(f"{html_lib.escape(str(ct))} ({pw_str})")
-                            stop_conn_text = f"\n   ⚡ {", ".join(stop_details)}"
-
-                        stop_addr_text = f"\n   📍 {stop_address}" if stop_address else ""
-
-                        msg += (f"🔌 Stop {i+1}: <b>{stop_name}</b> ({dist:.0f} km from {from_name})"
-                                f"{stop_addr_text}"
-                                f"{stop_conn_text}\n"
-                                f"   <a href=\"{stop_maps_link}\">🗺️ Navigate</a> | <a href=\"{stop_view_link}\">📌 View on Map</a>\n")
-                    else:
-                        msg += f"🔌 Stop {i+1}: {from_name} မှ <b>{dist:.0f} km</b> — အနီးဆုံး Station မတွေ့ပါ။\n"
+                    stop_link = f"https://www.google.com/maps/search/?api=1&query={stop_lat:.4f},{stop_lon:.4f}"
+                    msg += f"🔌 Stop {i+1}: {from_name} မှ <b>{dist:.0f} km</b> — <a href=\"{stop_link}\">Station ရှာ</a>\n"
                 msg += (f"\n📋 <b>အကြံပြုချက်:</b>\n"
                         f"• Stop တိုင်းမှာ <b>{charge_to_pct}%</b> အထိ အားသွင်းပါ\n"
                         f"• တစ် Stop ကြာချိန်: ~<b>{utils.format_charge_time(charge_time)}</b>\n"
@@ -688,38 +670,10 @@ async def route_calculate(u: Update, c: ContextTypes.DEFAULT_TYPE):
                        f"⚡ <b>Need {stops_needed} charging stop(s)</b>\n\n")
                 for i in range(stops_needed):
                     dist = stop_every_km * (i + 1)
-                    # Find actual nearby stations for the stop
                     stop_lat = from_lat + (to_lat - from_lat) * (i + 1) / (stops_needed + 1)
                     stop_lon = from_lon + (to_lon - from_lon) * (i + 1) / (stops_needed + 1)
-
-                    nearby_stops = charge_api.get_nearby_charging_stations(stop_lat, stop_lon, distance=5, max_results=1)
-                    if nearby_stops:
-                        stop_station = nearby_stops[0]
-                        stop_info = stop_station.get("addressInfo", {})
-                        stop_name = html_lib.escape(str(stop_info.get("title", "Unknown"))[:60])
-                        stop_address = html_lib.escape(str(stop_info.get("addressLine1", "") or "")[:100])
-                        stop_maps_link = f"https://www.google.com/maps/dir/?api=1&destination={stop_info.get("latitude")},{stop_info.get("longitude")}"
-                        stop_view_link = f"https://www.google.com/maps/search/?api=1&query={stop_info.get("latitude")},{stop_info.get("longitude")}"
-
-                        stop_conns = stop_station.get("connections", [])
-                        stop_conn_text = ""
-                        if stop_conns:
-                            stop_details = []
-                            for cn in stop_conns[:2]: # Limit to 2 connection types for brevity
-                                ct = cn.get("connectionType", {}).get("title", "Unknown")
-                                pw = cn.get("powerKW")
-                                pw_str = f"{pw}kW" if pw else "?"
-                                stop_details.append(f"{html_lib.escape(str(ct))} ({pw_str})")
-                            stop_conn_text = f"\n   ⚡ {", ".join(stop_details)}"
-
-                        stop_addr_text = f"\n   📍 {stop_address}" if stop_address else ""
-
-                        msg += (f"🔌 Stop {i+1}: <b>{stop_name}</b> ({dist:.0f} km from {from_name})"
-                                f"{stop_addr_text}"
-                                f"{stop_conn_text}\n"
-                                f"   <a href=\"{stop_maps_link}\">🗺️ Navigate</a> | <a href=\"{stop_view_link}\">📌 View on Map</a>\n")
-                    else:
-                        msg += f"🔌 Stop {i+1}: <b>{dist:.0f} km</b> from {from_name} — No nearby station found.\n"
+                    stop_link = f"https://www.google.com/maps/search/?api=1&query={stop_lat:.4f},{stop_lon:.4f}"
+                    msg += f"🔌 Stop {i+1}: <b>{dist:.0f} km</b> from {from_name} — <a href=\"{stop_link}\">Find Station</a>\n"
                 msg += (f"\n📋 <b>Recommendations:</b>\n"
                         f"• Charge to <b>{charge_to_pct}%</b> at each stop\n"
                         f"• ~<b>{utils.format_charge_time(charge_time)}</b> per stop\n"
