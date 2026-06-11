@@ -4,8 +4,7 @@ import requests
 OPEN_CHARGE_MAP_API_KEY = os.getenv("OPEN_CHARGE_MAP_API_KEY")
 OPEN_CHARGE_MAP_BASE_URL = "https://api.openchargemap.io/v3/poi/"
 
-def get_nearby_charging_stations(latitude, longitude, distance=5, units="KM", max_results=5, charger_type_id=None):
-    """နီးဆုံး Charging Station များ ရှာဖွေတယ်။"""
+def get_nearby_charging_stations(latitude, longitude, distance=10, units="KM", max_results=5, charger_type_id=None):
     if not OPEN_CHARGE_MAP_API_KEY:
         print("OPEN_CHARGE_MAP_API_KEY မရှိပါ။")
         return []
@@ -19,53 +18,45 @@ def get_nearby_charging_stations(latitude, longitude, distance=5, units="KM", ma
         "distanceunit": units,
         "maxresults": max_results,
         "camelcase": True,
+        "verbose": False,
+        "includecomments": False,
     }
 
     if charger_type_id:
         params["connectiontypeid"] = charger_type_id
 
     try:
-        response = requests.get(OPEN_CHARGE_MAP_BASE_URL, params=params, timeout=10)
+        response = requests.get(OPEN_CHARGE_MAP_BASE_URL, params=params, timeout=15)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.Timeout:
-        print("API request timeout ဖြစ်သွားပါသည်။")
+        print("API timeout ဖြစ်သွားပါသည်။")
         return []
     except requests.exceptions.RequestException as e:
-        print(f"Charging station ရှာမရပါ: {e}")
+        print(f"Station ရှာမရပါ: {e}")
         return []
 
-def get_charger_types():
-    """ရရှိနိုင်သော Charger Type များ ရယူတယ်။"""
-    if not OPEN_CHARGE_MAP_API_KEY:
-        return {}
 
-    params = {
-        "key": OPEN_CHARGE_MAP_API_KEY,
-        "output": "json",
-        "action": "GetConnectionTypes",
-        "camelcase": True,
-    }
-
+def geocode_city(city_name):
+    """
+    မြို့နာမည်ကနေ lat/lon ရယူတယ် — Nominatim (free, no key needed)
+    Myanmar မြို့တွေ အတွက် "city_name, Myanmar" ဆိုပြီး ရှာတယ်
+    """
     try:
-        response = requests.get(OPEN_CHARGE_MAP_BASE_URL, params=params, timeout=10)
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {
+            "q": f"{city_name}, Myanmar",
+            "format": "json",
+            "limit": 1,
+            "accept-language": "en",
+        }
+        headers = {"User-Agent": "EVHelperBot/1.0"}
+        response = requests.get(url, params=params, headers=headers, timeout=10)
         response.raise_for_status()
-        connection_types = response.json()
-        return {ct["title"]: ct["id"] for ct in connection_types}
-    except requests.exceptions.RequestException as e:
-        print(f"Charger type ရယူမရပါ: {e}")
-        return {}
-
-
-# Testing
-if __name__ == "__main__":
-    test_lat = 16.8409
-    test_lon = 96.1735
-    print(f"Yangon အနီး Station ရှာနေပါသည်...")
-    stations = get_nearby_charging_stations(test_lat, test_lon, distance=10, max_results=3)
-    if stations:
-        for station in stations:
-            print(f"Station: {station.get('addressInfo', {}).get('title')}")
-            print(f"  Distance: {station.get('addressInfo', {}).get('distance', 0):.2f} KM")
-    else:
-        print("Station မတွေ့ပါ သို့မဟုတ် Error ဖြစ်ပါသည်။")
+        results = response.json()
+        if results:
+            return float(results[0]["lat"]), float(results[0]["lon"]), results[0].get("display_name", city_name)
+        return None, None, None
+    except Exception as e:
+        print(f"Geocode error: {e}")
+        return None, None, None
