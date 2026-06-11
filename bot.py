@@ -399,6 +399,7 @@ async def find_station(u: Update, c: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardMarkup(kb, one_time_keyboard=True, resize_keyboard=True))
 
 async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    import html as html_lib
     uid = u.effective_user.id
     lang = get_lang(uid)
     lat = u.message.location.latitude
@@ -407,16 +408,16 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     c.user_data["last_lon"] = lon
 
     loading = await u.message.reply_text(
-        "🔍 Station ရှာဖွေနေပါသည်..." if lang == "MM" else "🔍 Searching for stations...",
+        "🔍 အားသွင်းစခန်းများ ရှာဖွေနေပါသည်..." if lang == "MM" else "🔍 Searching for stations...",
         reply_markup=ReplyKeyboardRemove())
 
     try:
         stations = charge_api.get_nearby_charging_stations(lat, lon, distance=10, max_results=5)
     except Exception as e:
-        logger.error(f"Station error: {e}")
+        logger.error(f"Station API error: {e}")
         await loading.delete()
         return await u.message.reply_text(
-            "❌ Station ရှာမရပါ။ နောက်မှ ထပ်စမ်းပါ။" if lang == "MM" else "❌ Search failed. Try again later.",
+            "❌ Station ရှာမရပါ။ နောက်မှ ထပ်စမ်းပါ။" if lang == "MM" else "❌ Search failed. Try again.",
             reply_markup=get_main_menu(lang))
 
     await loading.delete()
@@ -426,82 +427,68 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
             "😔 သင့်အနီးတွင် Station မတွေ့ပါ။" if lang == "MM" else "😔 No stations found nearby.",
             reply_markup=get_main_menu(lang))
 
-    # FIXED: Build message safely, avoid HTML injection from API data
-    title = "🔌 <b>အနီးဆုံး Station များ:</b>\n\n" if lang == "MM" else "🔌 <b>Nearby Stations:</b>\n\n"
-    msg = title
-    keyboard = []
     is_prem = db.is_premium(uid)
+
+    # Send each station as separate message to avoid HTML length/parse issues
+    header = f"🔌 <b>အနီးဆုံး Station {len(stations[:5])} ခု တွေ့ပါသည်:</b>" if lang == "MM" else f"🔌 <b>Found {len(stations[:5])} nearby stations:</b>"
+    await u.message.reply_html(header)
 
     for i, station in enumerate(stations[:5]):
         try:
             info = station.get("addressInfo", {})
-            name = str(info.get("title", "Unknown"))[:50]
-            address = str(info.get("addressLine1", ""))[:80]
+            name = html_lib.escape(str(info.get("title", "Unknown"))[:60])
+            address = html_lib.escape(str(info.get("addressLine1", "") or "")[:100])
             dist = float(info.get("distance", 0))
-            s_lat = info.get("latitude", lat)
-            s_lon = info.get("longitude", lon)
+            s_lat = info.get("latitude") or lat
+            s_lon = info.get("longitude") or lon
 
             maps_link = f"https://www.google.com/maps/dir/?api=1&destination={s_lat},{s_lon}"
             view_link = f"https://www.google.com/maps/search/?api=1&query={s_lat},{s_lon}"
 
-            # Escape special HTML chars from API data
-            import html as html_lib
-            name_safe = html_lib.escape(name)
-            address_safe = html_lib.escape(address)
-
-            msg += f"{i+1}. <b>{name_safe}</b> ({dist:.1f} km)\n"
-            if address_safe:
-                msg += f"   📍 {address_safe}\n"
-
-            # Connections
+            # Build connection info
             conns = station.get("connections", [])
+            conn_text = ""
             if conns:
                 details = []
-                for cn in conns[:3]:
-                    ct = cn.get("connectionType", {}).get("title", "?")
+                for cn in conns[:4]:
+                    ct = cn.get("connectionType", {}).get("title", "Unknown")
                     pw = cn.get("powerKW")
                     pw_str = f"{pw}kW" if pw else "?"
-                    details.append(f"{ct} ({pw_str})")
-                msg += f"   ⚡ {', '.join(details)}\n"
+                    details.append(f"{html_lib.escape(str(ct))} ({pw_str})")
+                conn_text = f"\n   ⚡ {', '.join(details)}"
 
-            msg += f"   <a href=\"{maps_link}\">🗺️ Navigate</a> | <a href=\"{view_link}\">📌 View</a>\n\n"
+            addr_text = f"\n   📍 {address}" if address else ""
 
-            # Save favorite button (Premium)
-            if is_prem and s_lat and s_lon:
-                cb_data = f"save_fav_|{name[:20]}|{address[:30] or 'N/A'}|{s_lat}|{s_lon}"
-                keyboard.append([InlineKeyboardButton(f"⭐ {name_safe[:25]}", callback_data=cb_data)])
+            msg = (f"{i+1}. <b>{name}</b> ({dist:.1f} km)"
+                   f"{addr_text}"
+                   f"{conn_text}\n"
+                   f"   <a href=\"{maps_link}\">🗺️ Navigate</a> | <a href=\"{view_link}\">📌 View on Map</a>")
+
+            # Keyboard for this station
+            station_kb = []
+            if is_prem:
+                raw_name = str(info.get("title", "Unknown"))[:20]
+                raw_addr = str(info.get("addressLine1", "") or "N/A")[:30]
+                cb = f"save_fav_|{raw_name}|{raw_addr}|{s_lat}|{s_lon}"
+                station_kb.append([InlineKeyboardButton(f"⭐ Save to Favorites", callback_data=cb)])
+
+            await u.message.reply_html(
+                msg,
+                disable_web_page_preview=True,
+                reply_markup=InlineKeyboardMarkup(station_kb) if station_kb else None)
 
         except Exception as e:
-            logger.error(f"Station parse error {i}: {e}")
+            logger.error(f"Station {i} send error: {e}")
             continue
 
+    # Final menu
+    footer_kb = []
     if not is_prem:
-        keyboard.append([InlineKeyboardButton("⭐ Favorites — Premium လိုသည်", callback_data="upgrade")])
-
-    keyboard.append(back_row(lang))
-
-    try:
-        await u.message.reply_html(msg, disable_web_page_preview=True,
-                                    reply_markup=InlineKeyboardMarkup(keyboard))
-    except Exception as e:
-        logger.error(f"HTML send error: {e} — trying plain text")
-        try:
-            # Fallback: plain text version
-            plain_msg = f"🔌 အနီးဆုံး Station များ:\n\n" if lang == "MM" else "🔌 Nearby Stations:\n\n"
-            for i, station in enumerate(stations[:5]):
-                info = station.get("addressInfo", {})
-                name = str(info.get("title", "Unknown"))[:50]
-                dist = float(info.get("distance", 0))
-                s_lat = info.get("latitude", lat)
-                s_lon = info.get("longitude", lon)
-                plain_msg += f"{i+1}. {name} ({dist:.1f} km)\n"
-                plain_msg += f"   https://maps.google.com/?q={s_lat},{s_lon}\n\n"
-            await u.message.reply_text(plain_msg, reply_markup=get_main_menu(lang))
-        except Exception as e2:
-            logger.error(f"Plain text send error: {e2}")
-            await u.message.reply_text(
-                f"🔌 {len(stations)} stations တွေ့ပါသည်။",
-                reply_markup=get_main_menu(lang))
+        footer_kb.append([InlineKeyboardButton("⭐ Favorites သိမ်းဖို့ Premium လိုသည်", callback_data="upgrade")])
+    footer_kb.append(back_row(lang))
+    await u.message.reply_text(
+        "✅ ရှာဖွေမှု ပြီးပါပြီ။" if lang == "MM" else "✅ Search complete.",
+        reply_markup=InlineKeyboardMarkup(footer_kb))
 
 # ================================================================
 # ROUTE PLANNER (Premium) — FIXED
