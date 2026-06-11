@@ -445,8 +445,9 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
             view_link = f"https://www.google.com/maps/search/?api=1&query={s_lat},{s_lon}"
 
             # Escape special HTML chars from API data
-            name_safe = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            address_safe = address.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            import html as html_lib
+            name_safe = html_lib.escape(name)
+            address_safe = html_lib.escape(address)
 
             msg += f"{i+1}. <b>{name_safe}</b> ({dist:.1f} km)\n"
             if address_safe:
@@ -483,11 +484,24 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_html(msg, disable_web_page_preview=True,
                                     reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
-        logger.error(f"Send station msg error: {e}")
-        # Fallback: plain text
-        await u.message.reply_text(
-            f"🔌 {len(stations)} stations တွေ့ပါသည်။ Google Maps မှ ရှာပါ။",
-            reply_markup=get_main_menu(lang))
+        logger.error(f"HTML send error: {e} — trying plain text")
+        try:
+            # Fallback: plain text version
+            plain_msg = f"🔌 အနီးဆုံး Station များ:\n\n" if lang == "MM" else "🔌 Nearby Stations:\n\n"
+            for i, station in enumerate(stations[:5]):
+                info = station.get("addressInfo", {})
+                name = str(info.get("title", "Unknown"))[:50]
+                dist = float(info.get("distance", 0))
+                s_lat = info.get("latitude", lat)
+                s_lon = info.get("longitude", lon)
+                plain_msg += f"{i+1}. {name} ({dist:.1f} km)\n"
+                plain_msg += f"   https://maps.google.com/?q={s_lat},{s_lon}\n\n"
+            await u.message.reply_text(plain_msg, reply_markup=get_main_menu(lang))
+        except Exception as e2:
+            logger.error(f"Plain text send error: {e2}")
+            await u.message.reply_text(
+                f"🔌 {len(stations)} stations တွေ့ပါသည်။",
+                reply_markup=get_main_menu(lang))
 
 # ================================================================
 # ROUTE PLANNER (Premium) — FIXED
