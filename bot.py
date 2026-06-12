@@ -183,6 +183,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "lang":                       await lang_menu(update, context)
     elif data == "upgrade":                    await upgrade_menu(update, context)
     elif data == "reminders":                  await show_reminders(update, context)
+    elif data == "add_reminder_menu":          await add_reminder_menu(update, context)
+    elif data.startswith("add_reminder_"):
+        rtype = data.replace("add_reminder_", "")
+        await do_add_reminder(update, context, rtype)
     elif data == "lang_mm":
         db.set_language(uid, "MM")
         await query.message.reply_html(utils.t("MM", "lang_set"), reply_markup=get_main_menu("MM"))
@@ -638,51 +642,70 @@ async def route_calculate(u: Update, c: ContextTypes.DEFAULT_TYPE):
                        f"Est. remaining: ~{remaining_pct}%\n\n"
                        f"<a href=\"{gmaps_route}\">🗺️ View on Google Maps</a>")
         else:
+            import html as html_lib
             safe_range = full_range * 0.75
             stops_needed = max(1, int(total_distance / safe_range))
             stop_every_km = total_distance / (stops_needed + 1)
             charge_to_pct = min(85, int(stop_every_km / full_range * 100) + 20)
             charge_time = utils.calculate_charge_time(20, charge_to_pct, battery_cap, charge_rate)
 
-            if lang == "MM":
-                msg = (f"🗺️ <b>Route Plan</b>\n\n"
-                       f"📍 {from_name} → {to_name}\n"
-                       f"📏 ခရီးဝေး: <b>{total_distance:.0f} km</b>\n"
-                       f"🔋 Range: <b>{current_range:.0f} km</b>\n\n"
-                       f"⚡ <b>Charging Stop {stops_needed} ကြိမ် လိုသည်</b>\n\n")
-                for i in range(stops_needed):
-                    dist = stop_every_km * (i + 1)
-                    # Midpoint coords for stop
-                    stop_lat = from_lat + (to_lat - from_lat) * (i + 1) / (stops_needed + 1)
-                    stop_lon = from_lon + (to_lon - from_lon) * (i + 1) / (stops_needed + 1)
-                    stop_link = f"https://www.google.com/maps/search/?api=1&query={stop_lat:.4f},{stop_lon:.4f}"
-                    msg += f"🔌 Stop {i+1}: {from_name} မှ <b>{dist:.0f} km</b> — <a href=\"{stop_link}\">Station ရှာ</a>\n"
-                msg += (f"\n📋 <b>အကြံပြုချက်:</b>\n"
-                        f"• Stop တိုင်းမှာ <b>{charge_to_pct}%</b> အထိ အားသွင်းပါ\n"
-                        f"• တစ် Stop ကြာချိန်: ~<b>{utils.format_charge_time(charge_time)}</b>\n"
-                        f"• ခရီးဆုံး Battery: ~20% ကျန်မည်\n\n"
-                        f"<a href=\"{gmaps_route}\">🗺️ Google Maps တွင် ကြည့်ရန်</a>")
-            else:
-                msg = (f"🗺️ <b>Route Plan</b>\n\n"
-                       f"📍 {from_name} → {to_name}\n"
-                       f"📏 Distance: <b>{total_distance:.0f} km</b>\n"
-                       f"🔋 Range: <b>{current_range:.0f} km</b>\n\n"
-                       f"⚡ <b>Need {stops_needed} charging stop(s)</b>\n\n")
-                for i in range(stops_needed):
-                    dist = stop_every_km * (i + 1)
-                    stop_lat = from_lat + (to_lat - from_lat) * (i + 1) / (stops_needed + 1)
-                    stop_lon = from_lon + (to_lon - from_lon) * (i + 1) / (stops_needed + 1)
-                    stop_link = f"https://www.google.com/maps/search/?api=1&query={stop_lat:.4f},{stop_lon:.4f}"
-                    msg += f"🔌 Stop {i+1}: <b>{dist:.0f} km</b> from {from_name} — <a href=\"{stop_link}\">Find Station</a>\n"
-                msg += (f"\n📋 <b>Recommendations:</b>\n"
-                        f"• Charge to <b>{charge_to_pct}%</b> at each stop\n"
-                        f"• ~<b>{utils.format_charge_time(charge_time)}</b> per stop\n"
-                        f"• Arrive with ~20% remaining\n\n"
-                        f"<a href=\"{gmaps_route}\">🗺️ View on Google Maps</a>")
+            # Send header first
+            header = (f"🗺️ <b>Route Plan</b>\n\n"
+                      f"📍 {from_name} → {to_name}\n"
+                      f"📏 {'ခရီးဝေး' if lang=='MM' else 'Distance'}: <b>{total_distance:.0f} km</b>\n"
+                      f"🔋 Range: <b>{current_range:.0f} km</b>\n\n"
+                      f"⚡ <b>Charging Stop {stops_needed} {'ကြိမ် လိုသည်' if lang=='MM' else 'stop(s) needed'}</b>\n\n"
+                      f"📋 <b>{'အကြံပြုချက်' if lang=='MM' else 'Recommendations'}:</b>\n"
+                      f"• {'Stop တိုင်းမှာ' if lang=='MM' else 'Charge to'} <b>{charge_to_pct}%</b> {'အထိ အားသွင်းပါ' if lang=='MM' else 'at each stop'}\n"
+                      f"• {'တစ် Stop ကြာချိန်' if lang=='MM' else 'Time per stop'}: ~<b>{utils.format_charge_time(charge_time)}</b>\n\n"
+                      f"<a href=\"{gmaps_route}\">🗺️ {'Google Maps တွင် ကြည့်ရန်' if lang=='MM' else 'View on Google Maps'}</a>")
+            await u.message.reply_html(header, disable_web_page_preview=True,
+                                        reply_markup=InlineKeyboardMarkup([back_row(lang)]))
 
-        await u.message.reply_html(msg, disable_web_page_preview=True,
-                                    reply_markup=InlineKeyboardMarkup([back_row(lang)]))
-        return ConversationHandler.END
+            # Send each stop with real station info
+            for i in range(stops_needed):
+                stop_lat = from_lat + (to_lat - from_lat) * (i + 1) / (stops_needed + 1)
+                stop_lon = from_lon + (to_lon - from_lon) * (i + 1) / (stops_needed + 1)
+                dist = stop_every_km * (i + 1)
+
+                # Search real station near stop point
+                try:
+                    nearby = charge_api.get_nearby_charging_stations(stop_lat, stop_lon, distance=50, max_results=1)
+                except:
+                    nearby = []
+
+                if nearby:
+                    s = nearby[0]
+                    info = s.get("addressInfo", {})
+                    s_name = html_lib.escape(str(info.get("title", "Unknown"))[:50])
+                    s_addr = html_lib.escape(str(info.get("addressLine1", "") or "")[:80])
+                    s_lat = info.get("latitude") or stop_lat
+                    s_lon = info.get("longitude") or stop_lon
+                    s_dist = float(info.get("distance", 0))
+                    conns = s.get("connections", [])
+                    conn_details = []
+                    for cn in conns[:3]:
+                        try:
+                            ct = html_lib.escape(str(cn.get("connectionType", {}).get("title", "?") or "?"))
+                            pw = cn.get("powerKW")
+                            conn_details.append(f"{ct} ({int(pw)}kW)" if pw else ct)
+                        except:
+                            continue
+                    conn_text = f"\n   ⚡ {', '.join(conn_details)}" if conn_details else ""
+                    addr_text = f"\n   📍 {s_addr}" if s_addr else ""
+                    nav_link = f"https://www.google.com/maps/dir/?api=1&destination={s_lat},{s_lon}"
+                    view_link = f"https://www.google.com/maps/search/?api=1&query={s_lat},{s_lon}"
+                    stop_msg = (f"🔌 <b>Stop {i+1}</b> — {from_name} မှ <b>{dist:.0f} km</b> ({s_dist:.0f} km {'လမ်းကြောင်းမှ' if lang=='MM' else 'off route'})\n"
+                                f"   <b>{s_name}</b>{addr_text}{conn_text}\n"
+                                f"   <a href=\"{nav_link}\">🗺️ Navigate</a> | <a href=\"{view_link}\">📌 View on Map</a>")
+                else:
+                    search_link = f"https://www.google.com/maps/search/EV+charging+station/@{stop_lat:.4f},{stop_lon:.4f},10z"
+                    stop_msg = (f"🔌 <b>Stop {i+1}</b> — {from_name} မှ <b>{dist:.0f} km</b>\n"
+                                f"   <a href=\"{search_link}\">🔍 {'ဒီနေရာတွင် Station ရှာပါ' if lang=='MM' else 'Search Station here'}</a>")
+
+                await u.message.reply_html(stop_msg, disable_web_page_preview=True)
+
+            return ConversationHandler.END
 
     except ValueError:
         await u.message.reply_text("❌ 0-100 ဂဏန်းဖြင့်သာ ရိုက်ပါ။")
@@ -746,6 +769,47 @@ async def cost_calculate(u: Update, c: ContextTypes.DEFAULT_TYPE):
 # ================================================================
 # REMINDERS
 # ================================================================
+async def add_reminder_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    lang = get_lang(u.effective_user.id)
+    msg_obj = u.callback_query.message
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔋 Battery Warning (20%)", callback_data="add_reminder_battery"),
+         InlineKeyboardButton("🔧 Tire Rotation", callback_data="add_reminder_tire")],
+        [InlineKeyboardButton("📋 Insurance Expire", callback_data="add_reminder_insurance"),
+         InlineKeyboardButton("🔧 Service Due", callback_data="add_reminder_service")],
+        back_row(lang)
+    ])
+    await msg_obj.reply_text(
+        "🔔 Reminder အမျိုးအစား ရွေးပါ:" if lang == "MM" else "🔔 Select reminder type:",
+        reply_markup=kb)
+
+async def do_add_reminder(u: Update, c: ContextTypes.DEFAULT_TYPE, rtype: str):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    msg_obj = u.callback_query.message
+
+    defaults = {
+        "battery": ("Battery 20% အောက်ဆင်းရင် သတိပေး", "Low battery warning"),
+        "tire": ("5,000 km တိုင်းတာယာ rotate လုပ်ပါ", "Rotate tires every 5,000 km"),
+        "insurance": ("Insurance ကုန်ဆုံးမည့် ၃၀ ရက်မတိုင်ခင် သတိပေး", "Alert 30 days before insurance expires"),
+        "service": ("10,000 km တိုင်း service လုပ်ပါ", "Service due every 10,000 km"),
+    }
+    mm_val, en_val = defaults.get(rtype, ("Reminder", "Reminder"))
+    value = mm_val if lang == "MM" else en_val
+
+    db.add_reminder(uid, rtype, value)
+    icons = {"battery": "🔋", "tire": "🔧", "insurance": "📋", "service": "🔧"}
+    icon = icons.get(rtype, "🔔")
+
+    await msg_obj.reply_html(
+        f"✅ {icon} <b>{rtype.title()} Reminder</b> သိမ်းပြီးပါပြီ!\n{value}"
+        if lang == "MM" else
+        f"✅ {icon} <b>{rtype.title()} Reminder</b> saved!\n{value}",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 Reminders ကြည့်" if lang=="MM" else "📋 View Reminders", callback_data="reminders")],
+            back_row(lang)
+        ]))
+
 async def show_reminders(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid)
