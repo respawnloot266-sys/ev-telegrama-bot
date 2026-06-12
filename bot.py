@@ -1053,26 +1053,33 @@ def main():
     from datetime import time as dtime
     app.job_queue.run_daily(send_off_peak_reminder, time=dtime(hour=22, minute=0))
 
+    # Shared fallbacks — cancel command + button_handler for all callbacks
+    shared_fallbacks = [
+        CommandHandler("cancel", cancel),
+        CommandHandler("start", start),
+        CallbackQueryHandler(button_handler),
+    ]
+
     reg_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(reg_start, pattern="^reg_start$"), CommandHandler("register", reg_start)],
         states={S_CAR_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_car_name)],
                 S_MODEL:    [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_model)],
                 S_CAP:      [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_cap)],
                 S_RANGE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_range)]},
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=shared_fallbacks,
         allow_reentry=True)
 
     upd_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(update_start, pattern="^upd_start$"), CommandHandler("update", update_start)],
         states={S_PCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_done)]},
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=shared_fallbacks,
         allow_reentry=True)
 
     ct_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(chargetime_start, pattern="^chargetime_start$"), CommandHandler("chargetime", chargetime_start)],
         states={S_CT_START: [MessageHandler(filters.TEXT & ~filters.COMMAND, chargetime_get_start)],
                 S_CT_END:   [MessageHandler(filters.TEXT & ~filters.COMMAND, chargetime_calculate)]},
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=shared_fallbacks,
         allow_reentry=True)
 
     route_conv = ConversationHandler(
@@ -1080,26 +1087,26 @@ def main():
         states={S_RT_FROM: [MessageHandler(filters.TEXT & ~filters.COMMAND, route_get_from)],
                 S_RT_TO:   [MessageHandler(filters.TEXT & ~filters.COMMAND, route_get_to)],
                 S_RT_PCT:  [MessageHandler(filters.TEXT & ~filters.COMMAND, route_calculate)]},
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=shared_fallbacks,
         allow_reentry=True)
 
     cost_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(cost_start, pattern="^cost_start$"), CommandHandler("cost", cost_start)],
         states={S_COST_START: [MessageHandler(filters.TEXT & ~filters.COMMAND, cost_get_start)],
                 S_COST_END:   [MessageHandler(filters.TEXT & ~filters.COMMAND, cost_calculate)]},
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=shared_fallbacks,
         allow_reentry=True)
 
     payment_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(buy_plan, pattern="^buy_plan_")],
         states={S_PAYMENT: [MessageHandler(filters.PHOTO, payment_screenshot_received)]},
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=shared_fallbacks,
         allow_reentry=True)
 
     ai_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(ai_chat_start, pattern="^ai_chat_start$"), CommandHandler("ai", ai_chat_start)],
         states={S_AI_CHAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ai_chat_respond)]},
-        fallbacks=[CommandHandler("cancel", cancel), CommandHandler("done", cancel)],
+        fallbacks=shared_fallbacks,
         allow_reentry=True)
 
     app.add_handler(CommandHandler("start", start))
