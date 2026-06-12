@@ -59,4 +59,4 @@ def geocode_city(city_name):
         return None, None, None
     except Exception as e:
         print(f"Geocode error: {e}")
-        return None, None, None 
+        return None, None, None
