@@ -769,51 +769,15 @@ async def cost_calculate(u: Update, c: ContextTypes.DEFAULT_TYPE):
 # ================================================================
 # REMINDERS
 # ================================================================
-async def add_reminder_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    lang = get_lang(u.effective_user.id)
-    msg_obj = u.callback_query.message
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔋 Battery Warning (20%)", callback_data="add_reminder_battery"),
-         InlineKeyboardButton("🔧 Tire Rotation", callback_data="add_reminder_tire")],
-        [InlineKeyboardButton("📋 Insurance Expire", callback_data="add_reminder_insurance"),
-         InlineKeyboardButton("🔧 Service Due", callback_data="add_reminder_service")],
-        back_row(lang)
-    ])
-    await msg_obj.reply_text(
-        "🔔 Reminder အမျိုးအစား ရွေးပါ:" if lang == "MM" else "🔔 Select reminder type:",
-        reply_markup=kb)
-
-async def do_add_reminder(u: Update, c: ContextTypes.DEFAULT_TYPE, rtype: str):
-    uid = u.effective_user.id
-    lang = get_lang(uid)
-    msg_obj = u.callback_query.message
-
-    defaults = {
-        "battery": ("Battery 20% အောက်ဆင်းရင် သတိပေး", "Low battery warning"),
-        "tire": ("5,000 km တိုင်းတာယာ rotate လုပ်ပါ", "Rotate tires every 5,000 km"),
-        "insurance": ("Insurance ကုန်ဆုံးမည့် ၃၀ ရက်မတိုင်ခင် သတိပေး", "Alert 30 days before insurance expires"),
-        "service": ("10,000 km တိုင်း service လုပ်ပါ", "Service due every 10,000 km"),
-    }
-    mm_val, en_val = defaults.get(rtype, ("Reminder", "Reminder"))
-    value = mm_val if lang == "MM" else en_val
-
-    db.add_reminder(uid, rtype, value)
-    icons = {"battery": "🔋", "tire": "🔧", "insurance": "📋", "service": "🔧"}
-    icon = icons.get(rtype, "🔔")
-
-    await msg_obj.reply_html(
-        f"✅ {icon} <b>{rtype.title()} Reminder</b> သိမ်းပြီးပါပြီ!\n{value}"
-        if lang == "MM" else
-        f"✅ {icon} <b>{rtype.title()} Reminder</b> saved!\n{value}",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Reminders ကြည့်" if lang=="MM" else "📋 View Reminders", callback_data="reminders")],
-            back_row(lang)
-        ]))
 
 async def show_reminders(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid)
-    msg_obj = u.callback_query.message if u.callback_query else u.message
+    if u.callback_query:
+        await u.callback_query.answer()
+        msg_obj = u.callback_query.message
+    else:
+        msg_obj = u.message
     reminders = db.get_reminders(uid)
 
     kb_add = [InlineKeyboardButton("➕ Reminder ထည့်" if lang=="MM" else "➕ Add Reminder",
@@ -835,6 +799,55 @@ async def show_reminders(u: Update, c: ContextTypes.DEFAULT_TYPE):
     keyboard.append([kb_add])
     keyboard.append(back_row(lang))
     await msg_obj.reply_html(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def add_reminder_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query:
+        await u.callback_query.answer()
+        msg_obj = u.callback_query.message
+    else:
+        msg_obj = u.message
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔋 Battery Warning", callback_data="add_reminder_battery"),
+         InlineKeyboardButton("🔧 Tire Rotation", callback_data="add_reminder_tire")],
+        [InlineKeyboardButton("📋 Insurance", callback_data="add_reminder_insurance"),
+         InlineKeyboardButton("🔧 Service", callback_data="add_reminder_service")],
+        back_row(lang)
+    ])
+    await msg_obj.reply_text(
+        "🔔 Reminder အမျိုးအစား ရွေးပါ:" if lang == "MM" else "🔔 Select reminder type:",
+        reply_markup=kb)
+
+async def do_add_reminder(u: Update, c: ContextTypes.DEFAULT_TYPE, rtype: str):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query:
+        await u.callback_query.answer()
+        msg_obj = u.callback_query.message
+    else:
+        msg_obj = u.message
+
+    defaults = {
+        "battery": ("Battery 20% အောက်ဆင်းရင် သတိပေး", "Low battery warning active"),
+        "tire":    ("5,000 km တိုင်း တာယာ rotate လုပ်ပါ", "Rotate tires every 5,000 km"),
+        "insurance": ("Insurance ကုန်ဆုံးမည့် ၃၀ ရက်မတိုင်ခင် သတိပေး", "Alert 30 days before insurance expires"),
+        "service": ("10,000 km တိုင်း service လုပ်ပါ", "Service due every 10,000 km"),
+    }
+    mm_val, en_val = defaults.get(rtype, ("Reminder", "Reminder"))
+    value = mm_val if lang == "MM" else en_val
+    db.add_reminder(uid, rtype, value)
+
+    icons = {"battery": "🔋", "tire": "🔧", "insurance": "📋", "service": "🔧"}
+    icon = icons.get(rtype, "🔔")
+    await msg_obj.reply_html(
+        f"✅ {icon} <b>{rtype.title()} Reminder</b> သိမ်းပြီးပါပြီ!\n{value}"
+        if lang == "MM" else
+        f"✅ {icon} <b>{rtype.title()} Reminder</b> saved!\n{value}",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 Reminders ကြည့်" if lang=="MM" else "📋 View Reminders", callback_data="reminders")],
+            back_row(lang)
+        ]))
 
 # ================================================================
 # AI CHAT (Premium)
