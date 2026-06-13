@@ -120,11 +120,7 @@ def get_main_menu(lang="MM"):
             [InlineKeyboardButton("⭐ Premium", callback_data="upgrade"),
              InlineKeyboardButton("🌐 EN/MM", callback_data="lang")],
             [InlineKeyboardButton("🔋 Battery Health", callback_data="bhealth_start"),
-             InlineKeyboardButton("💊 Degradation", callback_data="degrade_start")],
-            [InlineKeyboardButton("💰 Expense", callback_data="expense_start"),
-             InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report")],
-            [InlineKeyboardButton("🔋 Battery Health", callback_data="bhealth_start"),
-             InlineKeyboardButton("💊 Degradation", callback_data="degrade_start")],
+             InlineKeyboardButton("💊 Degradation ⭐", callback_data="degrade_start")],
             [InlineKeyboardButton("💰 Expense", callback_data="expense_start"),
              InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report")],
             [InlineKeyboardButton("💡 Tips", callback_data="tips")],
@@ -145,6 +141,10 @@ def get_main_menu(lang="MM"):
              InlineKeyboardButton("📍 Favorites ⭐", callback_data="favs")],
             [InlineKeyboardButton("⭐ Premium", callback_data="upgrade"),
              InlineKeyboardButton("🌐 EN/MM", callback_data="lang")],
+            [InlineKeyboardButton("🔋 Battery Health", callback_data="bhealth_start"),
+             InlineKeyboardButton("💊 Degradation ⭐", callback_data="degrade_start")],
+            [InlineKeyboardButton("💰 Expense", callback_data="expense_start"),
+             InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report")],
             [InlineKeyboardButton("💡 Tips", callback_data="tips")],
         ]
     return InlineKeyboardMarkup(kb)
