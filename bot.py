@@ -42,6 +42,13 @@ S_COST_START = 60
 S_COST_END   = 61
 # AI Chat
 S_AI_CHAT    = 70
+# Battery Health
+S_BH_SOH     = 80
+S_BH_MILEAGE = 81
+# Expense
+S_EXP_CAT    = 90
+S_EXP_AMT    = 91
+S_EXP_NOTE   = 92
 
 CAR_CHARGE_RATES = {
     "tesla model 3": 250, "tesla model y": 250,
@@ -112,6 +119,14 @@ def get_main_menu(lang="MM"):
              InlineKeyboardButton("📍 Favorites ⭐", callback_data="favs")],
             [InlineKeyboardButton("⭐ Premium", callback_data="upgrade"),
              InlineKeyboardButton("🌐 EN/MM", callback_data="lang")],
+            [InlineKeyboardButton("🔋 Battery Health", callback_data="bhealth_start"),
+             InlineKeyboardButton("💊 Degradation", callback_data="degrade_start")],
+            [InlineKeyboardButton("💰 Expense", callback_data="expense_start"),
+             InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report")],
+            [InlineKeyboardButton("🔋 Battery Health", callback_data="bhealth_start"),
+             InlineKeyboardButton("💊 Degradation", callback_data="degrade_start")],
+            [InlineKeyboardButton("💰 Expense", callback_data="expense_start"),
+             InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report")],
             [InlineKeyboardButton("💡 Tips", callback_data="tips")],
         ]
     else:
@@ -183,6 +198,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "lang":                       await lang_menu(update, context)
     elif data == "upgrade":                    await upgrade_menu(update, context)
     elif data == "reminders":                  await show_reminders(update, context)
+    elif data == "bhealth_start":              await bhealth_start(update, context)
+    elif data == "degrade_start":              await degrade_show(update, context)
+    elif data == "expense_start":              await expense_menu(update, context)
+    elif data == "monthly_report":             await monthly_report(update, context)
+    elif data.startswith("exp_cat_"):          await expense_set_cat(update, context)
     elif data == "add_reminder_menu":          await add_reminder_menu(update, context)
     elif data.startswith("add_reminder_"):
         rtype = data.replace("add_reminder_", "")
@@ -1065,6 +1085,8 @@ def main():
 
     from datetime import time as dtime
     app.job_queue.run_daily(send_off_peak_reminder, time=dtime(hour=22, minute=0))
+    # Weekly summary every Monday 8AM
+    app.job_queue.run_daily(send_weekly_summary, time=dtime(hour=8, minute=0), days=(0,))
 
     # Shared fallbacks — cancel command + button_handler for all callbacks
     shared_fallbacks = [
@@ -1122,6 +1144,20 @@ def main():
         fallbacks=shared_fallbacks,
         allow_reentry=True)
 
+    bhealth_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(bhealth_start, pattern="^bhealth_start$")],
+        states={S_BH_SOH:     [MessageHandler(filters.TEXT & ~filters.COMMAND, bhealth_get_soh)],
+                S_BH_MILEAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, bhealth_get_mileage)]},
+        fallbacks=shared_fallbacks,
+        allow_reentry=True)
+
+    expense_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(expense_set_cat, pattern="^exp_cat_")],
+        states={S_EXP_AMT:  [MessageHandler(filters.TEXT & ~filters.COMMAND, expense_get_amt)],
+                S_EXP_NOTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, expense_save)]},
+        fallbacks=shared_fallbacks,
+        allow_reentry=True)
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", admin_stats))
     app.add_handler(reg_conv)
@@ -1131,6 +1167,8 @@ def main():
     app.add_handler(cost_conv)
     app.add_handler(payment_conv)
     app.add_handler(ai_conv)
+    app.add_handler(bhealth_conv)
+    app.add_handler(expense_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.LOCATION, location_handler))
 
