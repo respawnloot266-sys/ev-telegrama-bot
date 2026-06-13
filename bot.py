@@ -1057,6 +1057,220 @@ async def payment_screenshot_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
 # OFF-PEAK REMINDER / CANCEL
 # ================================================================
 
+# ================================================================
+# PHASE 2: BATTERY HEALTH TRACKER
+# ================================================================
+async def bhealth_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    msg_obj = u.callback_query.message if u.callback_query else u.message
+    if u.callback_query: await u.callback_query.answer()
+    await msg_obj.reply_text(
+        "🔋 Battery SOH % ရိုက်ပါ။ (ဥပမာ: 92)\n\nSOH = State of Health, ကားနဲ့ပါလာတဲ့ app မှာ ကြည့်နိုင်ပါတယ်။"
+        if lang == "MM" else
+        "🔋 Enter Battery SOH % (e.g. 92)\nSOH = State of Health, check in your car app.")
+    return S_BH_SOH
+
+async def bhealth_get_soh(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    lang = get_lang(u.effective_user.id)
+    try:
+        soh = float(u.message.text.strip())
+        if not (0 <= soh <= 100): raise ValueError
+        c.user_data["bh_soh"] = soh
+        await u.message.reply_text(
+            "🛣️ လက်ရှိ Mileage (km) ရိုက်ပါ။ (ဥပမာ: 15000)"
+            if lang == "MM" else
+            "🛣️ Enter current mileage in km (e.g. 15000)")
+        return S_BH_MILEAGE
+    except ValueError:
+        await u.message.reply_text("❌ 0-100 ဂဏန်းဖြင့်သာ ရိုက်ပါ။")
+        return S_BH_SOH
+
+async def bhealth_get_mileage(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    try:
+        mileage = int(u.message.text.strip().replace(",", ""))
+        soh = c.user_data["bh_soh"]
+        db.save_battery_health(uid, soh, mileage)
+        if soh >= 90:
+            status = "🟢 အလွန်ကောင်း" if lang == "MM" else "🟢 Excellent"
+            tip = "Battery အခြေအနေ အကောင်းဆုံးပဲ။ 20-80% ကြားသိမ်းပါ။" if lang == "MM" else "Battery in great condition. Keep charging 20-80%."
+        elif soh >= 80:
+            status = "🟡 ကောင်း" if lang == "MM" else "🟡 Good"
+            tip = "Battery ကောင်းနေသေးတယ်။ DC Fast Charge လျှော့သုံးပါ။" if lang == "MM" else "Battery good. Reduce DC Fast Charging."
+        elif soh >= 70:
+            status = "🟠 သတိထားပါ" if lang == "MM" else "🟠 Fair"
+            tip = "Battery နည်းနည်း ကျဆင်းနေပြီ။ ဆိုင်မှာ စစ်ဆေးပါ။" if lang == "MM" else "Battery degrading. Check with dealer."
+        else:
+            status = "🔴 အစားထိုးရန် လိုသည်" if lang == "MM" else "🔴 Poor"
+            tip = "Battery အစားထိုးရန် ဆိုင်သို့ သွားပါ။" if lang == "MM" else "Visit dealer for battery replacement."
+        yearly_deg = max(0.5, (100 - soh) / max(1, mileage / 20000)) * 0.8
+        pred_1yr = max(0, soh - yearly_deg)
+        pred_3yr = max(0, soh - yearly_deg * 3)
+        msg = (f"🔋 <b>Battery Health Report</b>\n\n"
+               f"📊 SOH: <b>{soh}%</b> — {status}\n"
+               f"🛣️ Mileage: <b>{mileage:,} km</b>\n\n"
+               f"💡 {tip}\n\n"
+               f"📈 <b>{'ခန့်မှန်းချက်' if lang=='MM' else 'Predictions'}:</b>\n"
+               f"• {'၁ နှစ်နောက်' if lang=='MM' else '1 year'}: ~{pred_1yr:.1f}%\n"
+               f"• {'၃ နှစ်နောက်' if lang=='MM' else '3 years'}: ~{pred_3yr:.1f}%")
+        await u.message.reply_html(msg, reply_markup=InlineKeyboardMarkup([back_row(lang)]))
+        return ConversationHandler.END
+    except ValueError:
+        await u.message.reply_text("❌ ဂဏန်းသာ ရိုက်ပါ။")
+        return S_BH_MILEAGE
+
+# ================================================================
+# PHASE 2: BATTERY DEGRADATION (Premium)
+# ================================================================
+async def degrade_show(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    msg_obj = u.callback_query.message if u.callback_query else u.message
+    if u.callback_query: await u.callback_query.answer()
+    ok, data = check_premium(uid, lang)
+    if not ok:
+        return await msg_obj.reply_html(data[0], reply_markup=data[1])
+    history = db.get_battery_health_history(uid)
+    if not history:
+        return await msg_obj.reply_html(
+            "📊 Battery Health data မရှိသေးပါ။\n🔋 Battery Health Tracker ကို အရင်သုံးပါ။"
+            if lang == "MM" else
+            "📊 No Battery Health data yet.\nUse Battery Health Tracker first.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔋 Battery Health", callback_data="bhealth_start")],
+                back_row(lang)]))
+    latest = history[0]
+    soh = float(latest[2])
+    mileage = int(latest[3])
+    if len(history) >= 2:
+        oldest = history[-1]
+        soh_diff = float(oldest[2]) - soh
+        mile_diff = max(1, mileage - int(oldest[3]))
+        deg_per_10k = (soh_diff / mile_diff) * 10000
+    else:
+        deg_per_10k = 1.5
+    msg = (f"💀 <b>Battery Degradation Prediction</b>\n\n"
+           f"📊 SOH: <b>{soh}%</b> @ {mileage:,} km\n"
+           f"📉 ~{deg_per_10k:.1f}% per 10,000 km\n\n"
+           f"<b>{'ခန့်မှန်းချက်' if lang=='MM' else 'Predictions'}:</b>\n")
+    for km in [10000, 30000, 50000, 100000]:
+        extra = max(0, km - mileage)
+        pred = max(0, soh - (deg_per_10k * extra / 10000))
+        bar = "█" * int(pred/5) + "░" * (20 - int(pred/5))
+        msg += f"• {km//1000}k km: <code>{bar}</code> {pred:.1f}%\n"
+    await msg_obj.reply_html(msg, reply_markup=InlineKeyboardMarkup([back_row(lang)]))
+
+# ================================================================
+# PHASE 2: EXPENSE TRACKER
+# ================================================================
+EXPENSE_CATS = {
+    "charging":  ("⚡ Charging",  "⚡ Charging"),
+    "service":   ("🔧 Service",   "🔧 Service"),
+    "insurance": ("📋 Insurance", "📋 Insurance"),
+    "tire":      ("🔄 Tire",      "🔄 Tire"),
+    "other":     ("📦 Other",     "📦 Other"),
+}
+
+async def expense_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    msg_obj = u.callback_query.message if u.callback_query else u.message
+    if u.callback_query: await u.callback_query.answer()
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚡ Charging", callback_data="exp_cat_charging"),
+         InlineKeyboardButton("🔧 Service", callback_data="exp_cat_service")],
+        [InlineKeyboardButton("📋 Insurance", callback_data="exp_cat_insurance"),
+         InlineKeyboardButton("🔄 Tire", callback_data="exp_cat_tire")],
+        [InlineKeyboardButton("📦 Other", callback_data="exp_cat_other")],
+        [InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report")],
+        back_row(lang)
+    ])
+    await msg_obj.reply_text(
+        "💰 ကုန်ကျစရိတ် category ရွေးပါ:" if lang == "MM" else "💰 Select expense category:",
+        reply_markup=kb)
+
+async def expense_set_cat(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query: await u.callback_query.answer()
+    cat = u.callback_query.data.replace("exp_cat_", "")
+    c.user_data["exp_cat"] = cat
+    mm_label, en_label = EXPENSE_CATS.get(cat, ("Other", "Other"))
+    label = mm_label if lang == "MM" else en_label
+    await u.callback_query.message.reply_text(
+        f"{label} — ငွေပမာဏ (MMK) ရိုက်ပါ။ (ဥပမာ: 5000)"
+        if lang == "MM" else
+        f"{label} — Enter amount in MMK (e.g. 5000)")
+    return S_EXP_AMT
+
+async def expense_get_amt(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    lang = get_lang(u.effective_user.id)
+    try:
+        amt = int(u.message.text.strip().replace(",", ""))
+        if amt <= 0: raise ValueError
+        c.user_data["exp_amt"] = amt
+        await u.message.reply_text(
+            "📝 မှတ်ချက် ရိုက်ပါ (မထည့်ချင်ရင် - ရိုက်ပါ)"
+            if lang == "MM" else
+            "📝 Add a note or type - to skip")
+        return S_EXP_NOTE
+    except ValueError:
+        await u.message.reply_text("❌ ဂဏန်းသာ ရိုက်ပါ။ (ဥပမာ: 5000)")
+        return S_EXP_AMT
+
+async def expense_save(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    note = u.message.text.strip()
+    if note == "-": note = ""
+    cat = c.user_data.get("exp_cat", "other")
+    amt = c.user_data.get("exp_amt", 0)
+    mm_label, en_label = EXPENSE_CATS.get(cat, ("Other", "Other"))
+    label = mm_label if lang == "MM" else en_label
+    db.add_expense(uid, cat, amt, note)
+    await u.message.reply_html(
+        f"✅ <b>မှတ်သားပြီး!</b>\n{label}: <b>MMK {amt:,}</b>" + (f"\n📝 {note}" if note else ""),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report")],
+            back_row(lang)]))
+    return ConversationHandler.END
+
+# ================================================================
+# PHASE 2: MONTHLY REPORT
+# ================================================================
+async def monthly_report(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    msg_obj = u.callback_query.message if u.callback_query else u.message
+    if u.callback_query: await u.callback_query.answer()
+    now = datetime.now()
+    expenses = db.get_monthly_expenses(uid, now.year, now.month)
+    if not expenses:
+        return await msg_obj.reply_html(
+            f"📊 {now.strftime('%B %Y')} — ကုန်ကျစရိတ် မရှိသေးပါ။"
+            if lang == "MM" else
+            f"📊 {now.strftime('%B %Y')} — No expenses yet.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💰 Add Expense", callback_data="expense_start")],
+                back_row(lang)]))
+    totals = {}
+    for e in expenses:
+        cat, amt = e[2], int(e[3])
+        totals[cat] = totals.get(cat, 0) + amt
+    grand_total = sum(totals.values())
+    msg = f"📊 <b>{now.strftime('%B %Y')} Report</b>\n\n"
+    icons = {"charging":"⚡","service":"🔧","insurance":"📋","tire":"🔄","other":"📦"}
+    for cat, amt in sorted(totals.items(), key=lambda x: x[1], reverse=True):
+        icon = icons.get(cat, "📦")
+        pct = int(amt / grand_total * 100)
+        bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
+        msg += f"{icon} {cat.title()}: <b>MMK {amt:,}</b> ({pct}%)\n<code>{bar}</code>\n\n"
+    msg += f"💰 <b>Total: MMK {grand_total:,}</b>"
+    await msg_obj.reply_html(msg, reply_markup=InlineKeyboardMarkup([back_row(lang)]))
+
+
 async def send_weekly_summary(context: ContextTypes.DEFAULT_TYPE):
     for uid in db.get_all_user_ids():
         try:
