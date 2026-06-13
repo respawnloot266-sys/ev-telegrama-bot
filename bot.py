@@ -1056,6 +1056,34 @@ async def payment_screenshot_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
 # ================================================================
 # OFF-PEAK REMINDER / CANCEL
 # ================================================================
+
+async def send_weekly_summary(context: ContextTypes.DEFAULT_TYPE):
+    for uid in db.get_all_user_ids():
+        try:
+            lang = db.get_language(uid)
+            car = db.get_active_car(uid)
+            if not car:
+                continue
+            logs = db.get_weekly_stats(uid)
+            if not logs:
+                continue
+            now = datetime.now()
+            expenses = db.get_monthly_expenses(uid, now.year, now.month)
+            total_exp = sum(int(e[3]) for e in expenses)
+            pcts = [int(l[4]) for l in logs]
+            avg_pct = sum(pcts) / len(pcts)
+            min_pct = min(pcts)
+            max_pct = max(pcts)
+            msg = (f"📊 <b>Weekly Summary</b>\n\n"
+                   f"🚗 {car[2]} ({car[3]})\n"
+                   f"🔋 Battery avg: <b>{avg_pct:.0f}%</b>\n"
+                   f"📉 Min: {min_pct}% | 📈 Max: {max_pct}%\n"
+                   f"💰 Month expenses: MMK {total_exp:,}\n\n"
+                   f"{'ကောင်းသောပတ်တစ်ပတ် ဖြစ်ပါစေ! ⚡' if lang=='MM' else 'Have a great week! ⚡'}")
+            await context.bot.send_message(chat_id=uid, text=msg, parse_mode="HTML")
+        except Exception as e:
+            logger.error(f"Weekly summary failed {uid}: {e}")
+
 async def send_off_peak_reminder(context: ContextTypes.DEFAULT_TYPE):
     for uid in db.get_all_user_ids():
         try:
@@ -1086,7 +1114,7 @@ def main():
     from datetime import time as dtime
     app.job_queue.run_daily(send_off_peak_reminder, time=dtime(hour=22, minute=0))
     # Weekly summary every Monday 8AM
-    app.job_queue.run_daily(send_weekly_summary, time=dtime(hour=8, minute=0), days=(0,))
+    app.job_queue.run_daily(send_weekly_summary, time=dtime(hour=8, minute=0))
 
     # Shared fallbacks — cancel command + button_handler for all callbacks
     shared_fallbacks = [
