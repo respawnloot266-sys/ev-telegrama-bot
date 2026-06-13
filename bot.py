@@ -1135,7 +1135,25 @@ def main():
     app.add_handler(MessageHandler(filters.LOCATION, location_handler))
 
     print("✅ EV Helper Bot running...")
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES,
+    )
+
+async def clear_and_run():
+    """Clear existing webhook/polling before starting to avoid Conflict error"""
+    from telegram import Bot
+    try:
+        bot = Bot(token=os.getenv("TELEGRAM_BOT_TOKEN", ""))
+        await bot.delete_webhook(drop_pending_updates=True)
+        await bot.close()
+        logger.info("Webhook cleared.")
+    except Exception as e:
+        logger.warning(f"Webhook clear: {e}")
+    main()
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(clear_and_run())
+
+# Conflict fix: clear webhook before start
