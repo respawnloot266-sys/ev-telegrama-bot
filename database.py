@@ -395,3 +395,74 @@ def get_monthly_expenses(uid, year, month):
     return res
 
 init_db()
+
+# --- BATTERY HEALTH ---
+def save_battery_health(uid, soh, mileage):
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS battery_health (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            soh REAL,
+            mileage INTEGER,
+            date DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    c.execute("INSERT INTO battery_health (user_id, soh, mileage) VALUES (?,?,?)",
+              (uid, soh, mileage))
+    conn.commit()
+    conn.close()
+
+def get_battery_health_history(uid):
+    conn = connect_db()
+    c = conn.cursor()
+    try:
+        c.execute("SELECT * FROM battery_health WHERE user_id=? ORDER BY date DESC LIMIT 10", (uid,))
+        res = c.fetchall()
+    except:
+        res = []
+    conn.close()
+    return res
+
+# --- EXPENSES ---
+def add_expense(uid, category, amount, note=""):
+    conn = connect_db()
+    c = conn.cursor()
+    get_or_create_user(uid)
+    c.execute("INSERT INTO expenses (user_id, category, amount, note) VALUES (?,?,?,?)",
+              (uid, category, amount, note))
+    conn.commit()
+    conn.close()
+
+def get_monthly_expenses(uid, year, month):
+    conn = connect_db()
+    c = conn.cursor()
+    try:
+        c.execute("""SELECT * FROM expenses WHERE user_id=?
+                     AND strftime('%Y',date)=? AND strftime('%m',date)=?
+                     ORDER BY date DESC""",
+                  (uid, str(year), f"{month:02d}"))
+        res = c.fetchall()
+    except:
+        res = []
+    conn.close()
+    return res
+
+def get_weekly_stats(uid):
+    """Last 7 days battery logs for weekly summary"""
+    conn = connect_db()
+    c = conn.cursor()
+    car = get_active_car(uid)
+    if not car:
+        conn.close()
+        return []
+    try:
+        since = (datetime.now() - timedelta(days=7)).isoformat()
+        c.execute("SELECT * FROM logs WHERE user_id=? AND car_id=? AND date>? ORDER BY date ASC",
+                  (uid, car[0], since))
+        res = c.fetchall()
+    except:
+        res = []
+    conn.close()
+    return res
