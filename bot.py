@@ -235,6 +235,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "degrade_start":              await degrade_show(update, context)
     elif data == "expense_start":              await expense_menu(update, context)
     elif data == "monthly_report":             await monthly_report(update, context)
+    elif data == "export_history":             await export_history(update, context)
+    elif data == "knowledge_base":             await knowledge_base(update, context)
+    elif data.startswith("kb_"):               await knowledge_base_article(update, context)
+    elif data.startswith("report_station_"):   await report_station_menu(update, context)
+    elif data.startswith("do_report_"):        await do_station_report(update, context)
     elif data.startswith("exp_cat_"):          await expense_set_cat(update, context)
     elif data == "add_reminder_menu":          await add_reminder_menu(update, context)
     elif data.startswith("add_reminder_"):
@@ -377,7 +382,6 @@ async def chargetime_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     return S_CT_START
 
 async def chargetime_get_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    lang = get_lang(u.effective_user.id)
     try:
         pct = int(u.message.text.strip())
         if not (0 <= pct <= 100): raise ValueError
@@ -578,12 +582,12 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                     time_str = "မကြာမီ"
                 msg += f"\n   {s_icon} <i>Last report ({time_str} ago): {s_label}</i>"
             station_kb.append([InlineKeyboardButton(
-                f"📢 Report Status", callback_data=f"report_station_{station_id}_{name[:15]}")])
+                "📢 Report Status", callback_data=f"report_station_{station_id}_{name[:15]}")])
             if is_prem:
                 raw_name = str(info.get("title", "Unknown"))[:20]
                 raw_addr = str(info.get("addressLine1", "") or "N/A")[:30]
                 cb = f"save_fav_|{raw_name}|{raw_addr}|{s_lat}|{s_lon}"
-                station_kb.append([InlineKeyboardButton(f"⭐ Save to Favorites", callback_data=cb)])
+                station_kb.append([InlineKeyboardButton("⭐ Save to Favorites", callback_data=cb)])
 
             await u.message.reply_html(
                 msg,
@@ -732,6 +736,8 @@ async def route_calculate(u: Update, c: ContextTypes.DEFAULT_TYPE):
                        f"✅ <b>Can reach without charging!</b>\n"
                        f"Est. remaining: ~{remaining_pct}%\n\n"
                        f"<a href=\"{gmaps_route}\">🗺️ View on Google Maps</a>")
+            await u.message.reply_html(msg, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([back_row(lang)]))
+            return ConversationHandler.END
         else:
             import html as html_lib
             safe_range = full_range * 0.75
@@ -1374,20 +1380,20 @@ async def report_station_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid)
     if u.callback_query: await u.callback_query.answer()
-    data = u.callback_query.data.replace("report_station_", "")
-    parts = data.split("_", 1)
-    station_id = "_".join(parts[0].split("_")[:2]) if len(parts) > 0 else data
     # Parse: report_station_{lat}_{lon}_{name}
     raw = u.callback_query.data.replace("report_station_", "")
     chunks = raw.split("_")
     s_id = f"{chunks[0]}_{chunks[1]}"
-    s_name = "_".join(chunks[2:]) if len(chunks) > 2 else "Station"
+    # Clean station name for callback data (no underscores to avoid split issues)
+    s_name_raw = "_".join(chunks[2:]) if len(chunks) > 2 else "Station"
+    s_name_cb = s_name_raw.replace("_", " ")
+    s_name = s_name_raw.replace("_", " ")
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🟢 အလုပ်လုပ်နေတယ်", callback_data=f"do_report_{s_id}_online_{s_name}"),
-         InlineKeyboardButton("🟠 လူကျနေတယ်", callback_data=f"do_report_{s_id}_busy_{s_name}")],
-        [InlineKeyboardButton("🔴 စက်ပျက်နေတယ်", callback_data=f"do_report_{s_id}_broken_{s_name}"),
-         InlineKeyboardButton("🟡 မီးပျက်နေတယ်", callback_data=f"do_report_{s_id}_no_power_{s_name}")],
+        [InlineKeyboardButton("🟢 အလုပ်လုပ်နေတယ်", callback_data=f"do_report_{s_id}_online_{s_name_cb}"),
+         InlineKeyboardButton("🟠 လူကျနေတယ်", callback_data=f"do_report_{s_id}_busy_{s_name_cb}")],
+        [InlineKeyboardButton("🔴 စက်ပျက်နေတယ်", callback_data=f"do_report_{s_id}_broken_{s_name_cb}"),
+         InlineKeyboardButton("🟡 မီးပျက်နေတယ်", callback_data=f"do_report_{s_id}_no_power_{s_name_cb}")],
         back_row(lang)
     ])
     await u.callback_query.message.reply_text(
@@ -1402,9 +1408,10 @@ async def do_station_report(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if u.callback_query: await u.callback_query.answer()
     raw = u.callback_query.data.replace("do_report_", "")
     chunks = raw.split("_")
+    # s_id is {lat}_{lon}
     s_id = f"{chunks[0]}_{chunks[1]}"
     status = chunks[2] if len(chunks) > 2 else "online"
-    s_name = "_".join(chunks[3:]) if len(chunks) > 3 else "Station"
+    s_name = " ".join(chunks[3:]) if len(chunks) > 3 else "Station"
 
     db.add_station_report(s_id, s_name, status, uid)
 

@@ -60,6 +60,11 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         if not payment:
             await query.edit_message_caption("❌ Payment မတွေ့ပါ။")
             return
+        
+        # Check if already processed
+        if payment[5] != "pending":
+            await query.answer(f"⚠️ This payment is already {payment[5]}!", show_alert=True)
+            return
 
         uid = payment[1]
         months = payment[3]
@@ -95,6 +100,11 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         payment = db.get_pending_payment(payment_id)
         if not payment:
             await query.edit_message_caption("❌ Payment မတွေ့ပါ။")
+            return
+        
+        # Check if already processed
+        if payment[5] != "pending":
+            await query.answer(f"⚠️ This payment is already {payment[5]}!", show_alert=True)
             return
 
         uid = payment[1]

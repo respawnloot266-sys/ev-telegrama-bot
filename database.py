@@ -374,25 +374,7 @@ def delete_reminder(uid, reminder_id):
     conn.close()
 
 # --- EXPENSES ---
-def add_expense(uid, category, amount, note=""):
-    conn = connect_db()
-    c = conn.cursor()
-    get_or_create_user(uid)
-    c.execute("INSERT INTO expenses (user_id, category, amount, note) VALUES (?,?,?,?)",
-              (uid, category, amount, note))
-    conn.commit()
-    conn.close()
 
-def get_monthly_expenses(uid, year, month):
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute("""SELECT * FROM expenses WHERE user_id=?
-                 AND strftime('%Y', date)=? AND strftime('%m', date)=?
-                 ORDER BY date DESC""",
-              (uid, str(year), f"{month:02d}"))
-    res = c.fetchall()
-    conn.close()
-    return res
 
 init_db()
 
@@ -439,8 +421,9 @@ def get_monthly_expenses(uid, year, month):
     conn = connect_db()
     c = conn.cursor()
     try:
+        # Fixed date formatting to match SQLite strftime
         c.execute("""SELECT * FROM expenses WHERE user_id=?
-                     AND strftime('%Y',date)=? AND strftime('%m',date)=?
+                     AND strftime('%Y', date)=? AND strftime('%m', date)=?
                      ORDER BY date DESC""",
                   (uid, str(year), f"{month:02d}"))
         res = c.fetchall()
