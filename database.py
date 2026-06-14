@@ -505,3 +505,35 @@ def get_station_report_summary(station_id):
     res = c.fetchall()
     conn.close()
     return res
+
+def add_points(uid, points):
+    conn = connect_db()
+    c = conn.cursor()
+    get_or_create_user(uid)
+    c.execute("UPDATE users SET points = points + ? WHERE id = ?", (points, uid))
+    conn.commit()
+    conn.close()
+
+def get_user_points(uid):
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("SELECT points FROM users WHERE id = ?", (uid,))
+    res = c.fetchone()
+    conn.close()
+    return res[0] if res else 0
+
+def get_total_users_count():
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users")
+    res = c.fetchone()[0]
+    conn.close()
+    return res
+
+def get_premium_users_count():
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM subscriptions WHERE expire_date > ?", (datetime.now().isoformat(),))
+    res = c.fetchone()[0]
+    conn.close()
+    return res

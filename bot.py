@@ -8,6 +8,7 @@ from telegram.ext import (Application, CommandHandler, MessageHandler, filters,
 import database as db
 import charge_api
 import utils
+import visuals
 from admin_bot import (send_payment_to_admin, admin_callback_handler, admin_stats,
                        ADMIN_CHAT_ID, KPAY_NUMBER, WAVE_NUMBER, PLANS)
 
@@ -113,6 +114,7 @@ def get_main_menu(lang="MM"):
              InlineKeyboardButton("⏱️ အားသွင်းကြာချိန်", callback_data="chargetime_start")],
             [InlineKeyboardButton("🗺️ Route Planner ⭐", callback_data="route_start"),
              InlineKeyboardButton("💰 Cost Calculator", callback_data="cost_start")],
+            [InlineKeyboardButton("📊 Visual Charts ⭐", callback_data="visual_charts")],
             [InlineKeyboardButton("🔔 Reminders", callback_data="reminders"),
              InlineKeyboardButton("🤖 AI Chat ⭐", callback_data="ai_chat_start")],
             [InlineKeyboardButton("🚗 ကားများ", callback_data="cars"),
@@ -120,10 +122,9 @@ def get_main_menu(lang="MM"):
             [InlineKeyboardButton("⭐ Premium", callback_data="upgrade"),
              InlineKeyboardButton("🌐 EN/MM", callback_data="lang")],
             [InlineKeyboardButton("🔋 Battery Health", callback_data="bhealth_start"),
-             InlineKeyboardButton("💊 Degradation ⭐", callback_data="degrade_start")],
-            [InlineKeyboardButton("💰 Expense", callback_data="expense_start"),
-             InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report")],
-            [InlineKeyboardButton("💡 Tips", callback_data="tips")],
+             InlineKeyboardButton("💰 Expense", callback_data="expense_start")],
+            [InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report"),
+             InlineKeyboardButton("💡 Tips", callback_data="tips")],
         ]
     else:
         kb = [
@@ -135,6 +136,7 @@ def get_main_menu(lang="MM"):
              InlineKeyboardButton("⏱️ Charge Time", callback_data="chargetime_start")],
             [InlineKeyboardButton("🗺️ Route Planner ⭐", callback_data="route_start"),
              InlineKeyboardButton("💰 Cost Calculator", callback_data="cost_start")],
+            [InlineKeyboardButton("📊 Visual Charts ⭐", callback_data="visual_charts")],
             [InlineKeyboardButton("🔔 Reminders", callback_data="reminders"),
              InlineKeyboardButton("🤖 AI Chat ⭐", callback_data="ai_chat_start")],
             [InlineKeyboardButton("🚗 My Cars", callback_data="cars"),
@@ -142,10 +144,9 @@ def get_main_menu(lang="MM"):
             [InlineKeyboardButton("⭐ Premium", callback_data="upgrade"),
              InlineKeyboardButton("🌐 EN/MM", callback_data="lang")],
             [InlineKeyboardButton("🔋 Battery Health", callback_data="bhealth_start"),
-             InlineKeyboardButton("💊 Degradation ⭐", callback_data="degrade_start")],
-            [InlineKeyboardButton("💰 Expense", callback_data="expense_start"),
-             InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report")],
-            [InlineKeyboardButton("💡 Tips", callback_data="tips")],
+             InlineKeyboardButton("💰 Expense", callback_data="expense_start")],
+            [InlineKeyboardButton("📊 Monthly Report", callback_data="monthly_report"),
+             InlineKeyboardButton("💡 Tips", callback_data="tips")],
         ]
     return InlineKeyboardMarkup(kb)
 
@@ -158,8 +159,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(uid)
     car = db.get_active_car(uid)
     name = update.effective_user.first_name or ""
-    plan_badge = "⭐ Premium" if db.is_premium(uid) else "🆓 Free"
-
+        plan_badge = "⭐ Premium" if db.is_premium(uid) else "🆓 Free"
+    points = db.get_user_points(uid)
     if car:
         pct = car[7]
         icon = utils.get_battery_icon(pct)
@@ -168,7 +169,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = (f"⚡━━━━━━━━━━━━━━━━━━⚡\n"
                    f"   <b>EV HELPER</b> — {plan_badge}\n"
                    f"⚡━━━━━━━━━━━━━━━━━━⚡\n\n"
-                   f"👋 ကြိုဆိုပါတယ်, <b>{name}</b>!\n\n"
+                   f"👋 ကြိုဆိုပါတယ်, <b>{name}</b>!\n"
+                   f"🏆 သင်၏ Points: <b>{points}</b>\n\n"
                    f"🚗 <b>{car[2]}</b> ({car[3]})\n"
                    f"{icon} Battery: <b>{pct}%</b>\n"
                    f"<code>[{bar}]</code>\n\n"
@@ -177,7 +179,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = (f"⚡━━━━━━━━━━━━━━━━━━⚡\n"
                    f"   <b>EV HELPER</b> — {plan_badge}\n"
                    f"⚡━━━━━━━━━━━━━━━━━━⚡\n\n"
-                   f"👋 Welcome back, <b>{name}</b>!\n\n"
+                   f"👋 Welcome back, <b>{name}</b>!\n"
+                   f"🏆 Your Points: <b>{points}</b>\n\n"
                    f"🚗 <b>{car[2]}</b> ({car[3]})\n"
                    f"{icon} Battery: <b>{pct}%</b>\n"
                    f"<code>[{bar}]</code>\n\n"
@@ -187,7 +190,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = (f"⚡━━━━━━━━━━━━━━━━━━⚡\n"
                    f"   <b>EV HELPER BOT</b>\n"
                    f"⚡━━━━━━━━━━━━━━━━━━⚡\n\n"
-                   f"🚀 မင်္ဂလာပါ, <b>{name}</b>!\n\n"
+                   f"🚀 မင်္ဂလာပါ, <b>{name}</b>!\n"
+                   f"🏆 သင်၏ Points: <b>{points}</b>\n\n"
                    f"Myanmar ရဲ့ အပြည့်စုံဆုံး EV Assistant ကို ကြိုဆိုပါတယ်!\n\n"
                    f"🔋 Battery Tracking\n"
                    f"🗺️ Route Planning\n"
@@ -198,7 +202,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = (f"⚡━━━━━━━━━━━━━━━━━━⚡\n"
                    f"   <b>EV HELPER BOT</b>\n"
                    f"⚡━━━━━━━━━━━━━━━━━━⚡\n\n"
-                   f"🚀 Hello, <b>{name}</b>!\n\n"
+                   f"🚀 Hello, <b>{name}</b>!\n"
+                   f"🏆 Your Points: <b>{points}</b>\n\n"
                    f"Myanmar's most complete EV Assistant!\n\n"
                    f"🔋 Battery Tracking\n"
                    f"🗺️ Route Planning\n"
@@ -235,6 +240,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "degrade_start":              await degrade_show(update, context)
     elif data == "expense_start":              await expense_menu(update, context)
     elif data == "monthly_report":             await monthly_report(update, context)
+    elif data == "visual_charts":              await visual_charts_menu(update, context)
+    elif data == "chart_battery":              await send_battery_chart(update, context)
+    elif data == "chart_expense":              await send_expense_chart(update, context)
     elif data == "export_history":             await export_history(update, context)
     elif data == "knowledge_base":             await knowledge_base(update, context)
     elif data.startswith("kb_"):               await knowledge_base_article(update, context)
@@ -1414,17 +1422,68 @@ async def do_station_report(u: Update, c: ContextTypes.DEFAULT_TYPE):
     s_name = " ".join(chunks[3:]) if len(chunks) > 3 else "Station"
 
     db.add_station_report(s_id, s_name, status, uid)
-
+    db.add_points(uid, 10) # Award points
+    
     status_labels = {"online": "🟢 အလုပ်လုပ်နေတယ်", "broken": "🔴 စက်ပျက်နေတယ်",
                      "no_power": "🟡 မီးပျက်နေတယ်", "busy": "🟠 လူကျနေတယ်"}
     label = status_labels.get(status, status)
     await u.callback_query.message.reply_html(
         f"✅ <b>Report တင်ပြီးပါပြီ!</b>\n{s_name}: {label}\n\n"
-        f"<i>မင်းရဲ့ report ကြောင့် EV community အားလုံး အကျိုးရှိပါတယ်! 🙏</i>"
+        f"🏆 သင် <b>10 Points</b> ရရှိပါပြီ! \n<i>မင်းရဲ့ report ကြောင့် EV community အားလုံး အကျိုးရှိပါတယ်! 🙏</i>"
         if lang == "MM" else
         f"✅ <b>Report submitted!</b>\n{s_name}: {label}\n\n"
-        f"<i>Thank you for helping the EV community! 🙏</i>",
+        f"🏆 You earned <b>10 Points</b>! \n<i>Thank you for helping the EV community! 🙏</i>",
         reply_markup=InlineKeyboardMarkup([back_row(lang)]))
+
+async def visual_charts_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query: await u.callback_query.answer()
+    
+    ok, data = check_premium(uid, lang)
+    if not ok:
+        return await u.callback_query.message.reply_html(data[0], reply_markup=data[1])
+        
+    msg = ("📊 <b>Visual Charts</b>\n\nသင့်ရဲ့ EV အသုံးပြုမှု မှတ်တမ်းတွေကို ဇယားများဖြင့် ကြည့်ရှုနိုင်ပါတယ်" 
+           if lang == "MM" else 
+           "📊 <b>Visual Charts</b>\n\nView your EV usage history with charts")
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔋 Battery History Chart", callback_data="chart_battery")],
+        [InlineKeyboardButton("💰 Expense Pie Chart", callback_data="chart_expense")],
+        back_row(lang)
+    ])
+    await u.callback_query.message.edit_text(msg, reply_markup=kb, parse_mode="HTML")
+
+async def send_battery_chart(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query: await u.callback_query.answer()
+    logs = db.get_logs(uid)
+    if not logs:
+        return await u.callback_query.message.reply_text("No history found", reply_markup=back_button(lang))
+    
+    path = visuals.generate_battery_history_chart(uid, logs)
+    if path:
+        await u.callback_query.message.reply_photo(photo=open(path, 'rb'), caption="📊 Battery Level History")
+        os.remove(path)
+    else:
+        await u.callback_query.message.reply_text("Error generating chart", reply_markup=back_button(lang))
+
+async def send_expense_chart(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query: await u.callback_query.answer()
+    now = datetime.now()
+    expenses = db.get_monthly_expenses(uid, now.year, now.month)
+    if not expenses:
+        return await u.callback_query.message.reply_text("No expenses this month", reply_markup=back_button(lang))
+    
+    path = visuals.generate_expense_chart(uid, expenses)
+    if path:
+        await u.callback_query.message.reply_photo(photo=open(path, 'rb'), caption="📊 Monthly Expense Summary")
+        os.remove(path)
+    else:
+        await u.callback_query.message.reply_text("Error generating chart", reply_markup=back_button(lang))
 
 # ================================================================
 # TRIP LOG EXPORT (Premium) — CSV
