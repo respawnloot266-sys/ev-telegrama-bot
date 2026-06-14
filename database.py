@@ -88,6 +88,8 @@ def init_db():
             reminder_type TEXT,
             value TEXT,
             note TEXT,
+            due_date DATETIME,
+            is_sent INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
@@ -349,22 +351,38 @@ def delete_favorite(uid, fav_id):
     conn.close()
 
 # --- REMINDERS ---
-def add_reminder(uid, reminder_type, value, note=""):
+def add_reminder(uid, reminder_type, value, due_date=None, note=""):
     conn = connect_db()
     c = conn.cursor()
     get_or_create_user(uid)
-    c.execute("INSERT INTO reminders (user_id, reminder_type, value, note) VALUES (?,?,?,?)",
-              (uid, reminder_type, value, note))
+    c.execute("INSERT INTO reminders (user_id, reminder_type, value, due_date, note) VALUES (?,?,?,?,?)",
+              (uid, reminder_type, value, due_date, note))
     conn.commit()
     conn.close()
 
 def get_reminders(uid):
     conn = connect_db()
     c = conn.cursor()
-    c.execute("SELECT * FROM reminders WHERE user_id=? AND is_active=1", (uid,))
+    c.execute("SELECT * FROM reminders WHERE user_id=? AND is_active=1 AND is_sent=0", (uid,))
     res = c.fetchall()
     conn.close()
     return res
+
+def get_due_reminders():
+    conn = connect_db()
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+    c.execute("SELECT * FROM reminders WHERE is_active=1 AND is_sent=0 AND due_date <= ?", (now,))
+    res = c.fetchall()
+    conn.close()
+    return res
+
+def mark_reminder_sent(reminder_id):
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("UPDATE reminders SET is_sent=1 WHERE id=?", (reminder_id,))
+    conn.commit()
+    conn.close()
 
 def delete_reminder(uid, reminder_id):
     conn = connect_db()

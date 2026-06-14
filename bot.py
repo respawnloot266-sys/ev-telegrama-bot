@@ -50,6 +50,8 @@ S_BH_MILEAGE = 801
 S_EXP_CAT    = 900
 S_EXP_AMT    = 901
 S_EXP_NOTE   = 902
+# Reminders
+S_REM_DATE   = 1000
 
 CAR_CHARGE_RATES = {
     "tesla model 3": 250, "tesla model y": 250,
@@ -896,32 +898,58 @@ async def add_reminder_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def do_add_reminder(u: Update, c: ContextTypes.DEFAULT_TYPE, rtype: str):
     uid = u.effective_user.id
     lang = get_lang(uid)
+    c.user_data["rem_type"] = rtype
+    
     if u.callback_query:
         await u.callback_query.answer()
         msg_obj = u.callback_query.message
     else:
         msg_obj = u.message
 
-    defaults = {
-        "battery": ("Battery 20% အောက်ဆင်းရင် သတိပေး", "Low battery warning active"),
-        "tire":    ("5,000 km တိုင်း တာယာ rotate လုပ်ပါ", "Rotate tires every 5,000 km"),
-        "insurance": ("Insurance ကုန်ဆုံးမည့် ၃၀ ရက်မတိုင်ခင် သတိပေး", "Alert 30 days before insurance expires"),
-        "service": ("10,000 km တိုင်း service လုပ်ပါ", "Service due every 10,000 km"),
-    }
-    mm_val, en_val = defaults.get(rtype, ("Reminder", "Reminder"))
-    value = mm_val if lang == "MM" else en_val
-    db.add_reminder(uid, rtype, value)
+    msg = ("📅 ဘယ်နေ့မှာ သတိပေးရမလဲ? (YYYY-MM-DD ပုံစံဖြင့် ရိုက်ပါ)\nဥပမာ: 2024-12-31" 
+           if lang == "MM" else 
+           "📅 When should I remind you? (Enter as YYYY-MM-DD)\nExample: 2024-12-31")
+    await msg_obj.reply_text(msg)
+    return S_REM_DATE
 
-    icons = {"battery": "🔋", "tire": "🔧", "insurance": "📋", "service": "🔧"}
-    icon = icons.get(rtype, "🔔")
-    await msg_obj.reply_html(
-        f"✅ {icon} <b>{rtype.title()} Reminder</b> သိမ်းပြီးပါပြီ!\n{value}"
-        if lang == "MM" else
-        f"✅ {icon} <b>{rtype.title()} Reminder</b> saved!\n{value}",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Reminders ကြည့်" if lang=="MM" else "📋 View Reminders", callback_data="reminders")],
-            back_row(lang)
-        ]))
+async def save_reminder_date(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    date_str = u.message.text.strip()
+    rtype = c.user_data.get("rem_type", "custom")
+    
+    try:
+        # Validate date format
+        due_date = datetime.strptime(date_str, "%Y-%m-%d")
+        if due_date < datetime.now():
+            await u.message.reply_text("❌ ရက်စွဲသည် အတိတ်ဖြစ်နေပါသည်။ နောင်လာမည့် ရက်စွဲကို ရိုက်ပါ။")
+            return S_REM_DATE
+            
+        defaults = {
+            "battery": ("Battery 20% အောက်ဆင်းရင် သတိပေး", "Low battery warning active"),
+            "tire":    ("တာယာ rotate လုပ်ရန် အချိန်တန်ပြီ", "Time to rotate tires"),
+            "insurance": ("Insurance သက်တမ်းတိုးရန် သတိပေးချက်", "Insurance renewal reminder"),
+            "service": ("ကား service လုပ်ရန် အချိန်တန်ပြီ", "Car service due reminder"),
+        }
+        mm_val, en_val = defaults.get(rtype, ("Reminder", "Reminder"))
+        value = mm_val if lang == "MM" else en_val
+        
+        db.add_reminder(uid, rtype, value, due_date.isoformat())
+
+        icons = {"battery": "🔋", "tire": "🔧", "insurance": "📋", "service": "🔧"}
+        icon = icons.get(rtype, "🔔")
+        await u.message.reply_html(
+            f"✅ {icon} <b>{rtype.title()} Reminder</b> သိမ်းပြီးပါပြီ!\n📅 ရက်စွဲ: {date_str}"
+            if lang == "MM" else
+            f"✅ {icon} <b>{rtype.title()} Reminder</b> saved!\n📅 Date: {date_str}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📋 Reminders ကြည့်" if lang=="MM" else "📋 View Reminders", callback_data="reminders")],
+                back_row(lang)
+            ]))
+        return ConversationHandler.END
+    except ValueError:
+        await u.message.reply_text("❌ ရက်စွဲပုံစံ မှားနေပါသည်။ YYYY-MM-DD ပုံစံဖြင့် ရိုက်ပါ။ (ဥပမာ: 2024-12-31)")
+        return S_REM_DATE
 
 # ================================================================
 # AI CHAT (Premium)
@@ -1408,6 +1436,23 @@ async def send_off_peak_reminder(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Reminder failed {uid}: {e}")
 
+async def check_and_send_reminders(context: ContextTypes.DEFAULT_TYPE):
+    due_reminders = db.get_due_reminders()
+    for r in due_reminders:
+        # r = (id, user_id, type, value, note, due_date, is_sent, ...)
+        rid, uid, rtype, val = r[0], r[1], r[2], r[3]
+        try:
+            lang = db.get_language(uid)
+            icons = {"battery": "🔋", "tire": "🔧", "insurance": "📋", "service": "🔧"}
+            icon = icons.get(rtype, "🔔")
+            msg = (f"🔔 <b>{rtype.title()} Reminder!</b>\n\n{val}"
+                   if lang == "MM" else
+                   f"🔔 <b>{rtype.title()} Reminder!</b>\n\n{val}")
+            await context.bot.send_message(chat_id=uid, text=msg, parse_mode="HTML")
+            db.mark_reminder_sent(rid)
+        except Exception as e:
+            logger.error(f"Failed to send reminder {rid} to {uid}: {e}")
+
 async def cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(u.effective_user.id)
     await u.message.reply_text("ဖျက်သိမ်းပြီး။" if lang=="MM" else "Cancelled.",
@@ -1428,6 +1473,8 @@ def main():
     app.job_queue.run_daily(send_off_peak_reminder, time=dtime(hour=22, minute=0))
     # Weekly summary every Monday 8AM
     app.job_queue.run_daily(send_weekly_summary, time=dtime(hour=8, minute=0))
+    # Check for reminders every 30 minutes
+    app.job_queue.run_repeating(check_and_send_reminders, interval=1800, first=10)
 
     # Shared fallbacks — cancel command + button_handler for all callbacks
     shared_fallbacks = [
@@ -1499,6 +1546,12 @@ def main():
         fallbacks=shared_fallbacks,
         allow_reentry=True)
 
+    rem_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(do_add_reminder, pattern="^add_reminder_")],
+        states={S_REM_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_reminder_date)]},
+        fallbacks=shared_fallbacks,
+        allow_reentry=True)
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", admin_stats))
     app.add_handler(reg_conv)
@@ -1510,6 +1563,7 @@ def main():
     app.add_handler(ai_conv)
     app.add_handler(bhealth_conv)
     app.add_handler(expense_conv)
+    app.add_handler(rem_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.LOCATION, location_handler))
 
