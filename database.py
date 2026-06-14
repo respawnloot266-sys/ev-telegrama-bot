@@ -88,8 +88,6 @@ def init_db():
             reminder_type TEXT,
             value TEXT,
             note TEXT,
-            due_date DATETIME,
-            is_sent INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
@@ -351,38 +349,22 @@ def delete_favorite(uid, fav_id):
     conn.close()
 
 # --- REMINDERS ---
-def add_reminder(uid, reminder_type, value, due_date=None, note=""):
+def add_reminder(uid, reminder_type, value, note=""):
     conn = connect_db()
     c = conn.cursor()
     get_or_create_user(uid)
-    c.execute("INSERT INTO reminders (user_id, reminder_type, value, due_date, note) VALUES (?,?,?,?,?)",
-              (uid, reminder_type, value, due_date, note))
+    c.execute("INSERT INTO reminders (user_id, reminder_type, value, note) VALUES (?,?,?,?)",
+              (uid, reminder_type, value, note))
     conn.commit()
     conn.close()
 
 def get_reminders(uid):
     conn = connect_db()
     c = conn.cursor()
-    c.execute("SELECT * FROM reminders WHERE user_id=? AND is_active=1 AND is_sent=0", (uid,))
+    c.execute("SELECT * FROM reminders WHERE user_id=? AND is_active=1", (uid,))
     res = c.fetchall()
     conn.close()
     return res
-
-def get_due_reminders():
-    conn = connect_db()
-    c = conn.cursor()
-    now = datetime.now().isoformat()
-    c.execute("SELECT * FROM reminders WHERE is_active=1 AND is_sent=0 AND due_date <= ?", (now,))
-    res = c.fetchall()
-    conn.close()
-    return res
-
-def mark_reminder_sent(reminder_id):
-    conn = connect_db()
-    c = conn.cursor()
-    c.execute("UPDATE reminders SET is_sent=1 WHERE id=?", (reminder_id,))
-    conn.commit()
-    conn.close()
 
 def delete_reminder(uid, reminder_id):
     conn = connect_db()
@@ -485,36 +467,58 @@ def get_weekly_stats(uid):
     conn.close()
     return res
 
-# --- STATION REPORTS ---
-def init_reports_db():
+# --- STATION COMMUNITY REPORTS ---
+def init_station_reports():
     conn = connect_db()
     c = conn.cursor()
     c.execute("""
         CREATE TABLE IF NOT EXISTS station_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             station_id TEXT,
-            user_id INTEGER,
+            station_name TEXT,
             status TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            reported_by INTEGER,
+            reported_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()
     conn.close()
 
-def add_station_report(station_id, user_id, status):
+def add_station_report(station_id, station_name, status, user_id):
+    init_station_reports()
     conn = connect_db()
     c = conn.cursor()
-    c.execute("INSERT INTO station_reports (station_id, user_id, status) VALUES (?, ?, ?)",
-              (station_id, user_id, status))
+    c.execute("""
+        INSERT INTO station_reports (station_id, station_name, status, reported_by)
+        VALUES (?, ?, ?, ?)
+    """, (station_id, station_name, status, user_id))
     conn.commit()
     conn.close()
 
-def get_latest_station_report(station_id):
+def get_station_last_report(station_id):
+    init_station_reports()
     conn = connect_db()
     c = conn.cursor()
-    c.execute("SELECT status, timestamp FROM station_reports WHERE station_id = ? ORDER BY timestamp DESC LIMIT 1", (station_id,))
+    c.execute("""
+        SELECT status, reported_at FROM station_reports
+        WHERE station_id = ?
+        ORDER BY reported_at DESC LIMIT 1
+    """, (station_id,))
     res = c.fetchone()
     conn.close()
     return res
 
-init_reports_db()
+def get_station_report_summary(station_id):
+    """Last 24hr reports summary"""
+    init_station_reports()
+    conn = connect_db()
+    c = conn.cursor()
+    since = (datetime.now() - timedelta(hours=24)).isoformat()
+    c.execute("""
+        SELECT status, COUNT(*) as cnt FROM station_reports
+        WHERE station_id = ? AND reported_at > ?
+        GROUP BY status ORDER BY cnt DESC
+    """, (station_id, since))
+    res = c.fetchall()
+    conn.close()
+    return res
