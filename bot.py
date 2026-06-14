@@ -8,7 +8,6 @@ from telegram.ext import (Application, CommandHandler, MessageHandler, filters,
 import database as db
 import charge_api
 import utils
-import exporter
 from admin_bot import (send_payment_to_admin, admin_callback_handler, admin_stats,
                        ADMIN_CHAT_ID, KPAY_NUMBER, WAVE_NUMBER, PLANS)
 
@@ -50,8 +49,6 @@ S_BH_MILEAGE = 801
 S_EXP_CAT    = 900
 S_EXP_AMT    = 901
 S_EXP_NOTE   = 902
-# Reminders
-S_REM_DATE   = 1000
 
 CAR_CHARGE_RATES = {
     "tesla model 3": 250, "tesla model y": 250,
@@ -166,15 +163,48 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if car:
         pct = car[7]
         icon = utils.get_battery_icon(pct)
-        msg = (f"👋 ပြန်လာတာ ကြိုဆိုပါတယ်, <b>{name}</b>! {plan_badge}\n\n"
-               f"🚗 {car[2]} ({car[3]})\n{icon} Battery: <b>{pct}%</b>\n\nဘာကူညီရမလဲ?"
-               if lang == "MM" else
-               f"👋 Welcome back, <b>{name}</b>! {plan_badge}\n\n"
-               f"🚗 {car[2]} ({car[3]})\n{icon} Battery: <b>{pct}%</b>\n\nHow can I help?")
+        bar = utils.format_battery_bar(pct, 15)
+        if lang == "MM":
+            msg = (f"⚡━━━━━━━━━━━━━━━━━━⚡\n"
+                   f"   <b>EV HELPER</b> — {plan_badge}\n"
+                   f"⚡━━━━━━━━━━━━━━━━━━⚡\n\n"
+                   f"👋 ကြိုဆိုပါတယ်, <b>{name}</b>!\n\n"
+                   f"🚗 <b>{car[2]}</b> ({car[3]})\n"
+                   f"{icon} Battery: <b>{pct}%</b>\n"
+                   f"<code>[{bar}]</code>\n\n"
+                   f"🔽 <i>ဘာကူညီရမလဲ?</i>")
+        else:
+            msg = (f"⚡━━━━━━━━━━━━━━━━━━⚡\n"
+                   f"   <b>EV HELPER</b> — {plan_badge}\n"
+                   f"⚡━━━━━━━━━━━━━━━━━━⚡\n\n"
+                   f"👋 Welcome back, <b>{name}</b>!\n\n"
+                   f"🚗 <b>{car[2]}</b> ({car[3]})\n"
+                   f"{icon} Battery: <b>{pct}%</b>\n"
+                   f"<code>[{bar}]</code>\n\n"
+                   f"🔽 <i>How can I help?</i>")
     else:
-        msg = (f"⚡ <b>EV Helper Smart Assistant</b>\n\nမင်္ဂလာပါ, <b>{name}</b>!\nကား မှတ်ပုံတင်ပြီး စတင်ပါ။"
-               if lang == "MM" else
-               f"⚡ <b>EV Helper Smart Assistant</b>\n\nHello, <b>{name}</b>!\nRegister your car to get started.")
+        if lang == "MM":
+            msg = (f"⚡━━━━━━━━━━━━━━━━━━⚡\n"
+                   f"   <b>EV HELPER BOT</b>\n"
+                   f"⚡━━━━━━━━━━━━━━━━━━⚡\n\n"
+                   f"🚀 မင်္ဂလာပါ, <b>{name}</b>!\n\n"
+                   f"Myanmar ရဲ့ အပြည့်စုံဆုံး EV Assistant ကို ကြိုဆိုပါတယ်!\n\n"
+                   f"🔋 Battery Tracking\n"
+                   f"🗺️ Route Planning\n"
+                   f"🔌 Charging Stations\n"
+                   f"🤖 AI Assistant\n\n"
+                   f"👇 ကား မှတ်ပုံတင်ပြီး စတင်ပါ!")
+        else:
+            msg = (f"⚡━━━━━━━━━━━━━━━━━━⚡\n"
+                   f"   <b>EV HELPER BOT</b>\n"
+                   f"⚡━━━━━━━━━━━━━━━━━━⚡\n\n"
+                   f"🚀 Hello, <b>{name}</b>!\n\n"
+                   f"Myanmar's most complete EV Assistant!\n\n"
+                   f"🔋 Battery Tracking\n"
+                   f"🗺️ Route Planning\n"
+                   f"🔌 Charging Stations\n"
+                   f"🤖 AI Assistant\n\n"
+                   f"👇 Register your car to get started!")
 
     if update.message:
         await update.message.reply_html(msg, reply_markup=get_main_menu(lang))
@@ -196,7 +226,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "hist":                       await history(update, context)
     elif data == "find":                       await find_station(update, context)
     elif data == "tips":                       await tips(update, context)
-    elif data.startswith("tip_"):              await tip_detail(update, context)
     elif data == "cars":                       await show_cars(update, context)
     elif data == "favs":                       await show_favorites(update, context)
     elif data == "lang":                       await lang_menu(update, context)
@@ -240,42 +269,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_reminders(update, context)
     elif data.startswith("admin_"):
         await admin_callback_handler(update, context)
-    elif data.startswith("rep_menu_"):
-        s_id = data.replace("rep_menu_", "")
-        kb = [
-            [InlineKeyboardButton("🟢 Online", callback_data=f"rep_set_{s_id}_Online"),
-             InlineKeyboardButton("🟡 Busy", callback_data=f"rep_set_{s_id}_Busy")],
-            [InlineKeyboardButton("🔴 Broken", callback_data=f"rep_set_{s_id}_Broken"),
-             InlineKeyboardButton("🔌 No Power", callback_data=f"rep_set_{s_id}_No Power")],
-            [InlineKeyboardButton("🔙 Back", callback_data="back_menu")]
-        ]
-        msg = "📢 <b>Station Status ကို ရွေးချယ်ပေးပါ:</b>" if lang == "MM" else "📢 <b>Select Station Status:</b>"
-        await query.message.edit_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
-    elif data.startswith("rep_set_"):
-        # Format: rep_set_{s_id}_{status}
-        parts = data.split("_")
-        if len(parts) >= 4:
-            s_id = parts[2]
-            status = parts[3]
-            db.add_station_report(s_id, uid, status)
-            msg = f"✅ Report တင်ပြီးပါပြီ: <b>{status}</b>" if lang == "MM" else f"✅ Status reported: <b>{status}</b>"
-            await query.answer(msg.replace("<b>", "").replace("</b>", ""), show_alert=True)
-            await start(update, context)
-    elif data == "export_pdf":
-        if not db.is_premium(uid):
-            ok, data = check_premium(uid, lang)
-            return await query.message.reply_html(data[0], reply_markup=data[1])
-        
-        car = db.get_active_car(uid)
-        logs = db.get_logs(uid)
-        if not car or not logs:
-            return await query.answer("❌ မှတ်တမ်း မရှိပါ။", show_alert=True)
-            
-        pdf_path = exporter.generate_trip_log_pdf(uid, car, logs)
-        with open(pdf_path, "rb") as f:
-            await context.bot.send_document(chat_id=uid, document=f, filename="EV_Trip_Log.pdf", 
-                                          caption="📜 Your EV Trip & Battery Log")
-        os.remove(pdf_path)
 
 # ================================================================
 # REGISTRATION
@@ -330,8 +323,14 @@ async def reg_range(u: Update, c: ContextTypes.DEFAULT_TYPE):
         db.add_car(uid, c.user_data["car_name"], c.user_data["model"],
                    c.user_data["cap"], full_range, c.user_data.get("rate", 50))
         await u.message.reply_html(
-            f"✅ <b>မှတ်ပုံတင်ပြီး!</b>\n🚗 {c.user_data['car_name']} ({c.user_data['model']})\n"
-            f"🔋 {c.user_data['cap']}kWh | 🛣️ {full_range}km | ⚡ {c.user_data.get('rate',50)}kW",
+            f"🏆 <b>မှတ်ပုံတင်ပြီးပါပြီ!</b>\n\n"
+            f"🚗 <b>{c.user_data['car_name']}</b> ({c.user_data['model']})\n"
+            f"{'─' * 22}\n"
+            f"🔋 Battery: <b>{c.user_data['cap']} kWh</b>\n"
+            f"🛣️ Range: <b>{full_range} km</b>\n"
+            f"⚡ Charge Rate: <b>{c.user_data.get('rate',50)} kW</b>\n"
+            f"{'─' * 22}\n"
+            f"✅ EV Helper Bot မှ ကြိုဆိုပါတယ်! 🎉",
             reply_markup=get_main_menu(lang))
     except ValueError:
         await u.message.reply_text("❌ ဂဏန်းသာ ရိုက်ပါ။")
@@ -439,11 +438,25 @@ async def status(u: Update, c: ContextTypes.DEFAULT_TYPE):
         weather_text = utils.format_weather_range(wd, lang)
     elif not db.is_premium(uid):
         weather_text = "\n\n⭐ Weather Range: Premium feature"
-    msg = (f"📊 <b>{'လက်ရှိအခြေအနေ' if lang=='MM' else 'Current Status'}</b>\n\n"
-           f"🚗 {car[2]} ({car[3]})\n"
-           f"{icon} Battery: <b>{pct}%</b>{warning}\n"
-           f"🛣️ {'ခရီး' if lang=='MM' else 'Range'}: <b>{current_range:.1f} km</b>\n"
-           f"⚡ {get_charge_rate(car[3])} kW{weather_text}")
+    bar = utils.format_battery_bar(pct, 15)
+    if lang == "MM":
+        msg = (f"📊 <b>လက်ရှိအခြေအနေ</b>\n\n"
+               f"🚗 <b>{car[2]}</b> ({car[3]})\n"
+               f"{'─' * 22}\n"
+               f"{icon} Battery: <b>{pct}%</b>{warning}\n"
+               f"<code>[{bar}]</code>\n"
+               f"{'─' * 22}\n"
+               f"🛣️ မောင်းနိုင်သည့်ခရီး: <b>{current_range:.1f} km</b>\n"
+               f"⚡ Charge Rate: <b>{get_charge_rate(car[3])} kW</b>{weather_text}")
+    else:
+        msg = (f"📊 <b>Current Status</b>\n\n"
+               f"🚗 <b>{car[2]}</b> ({car[3]})\n"
+               f"{'─' * 22}\n"
+               f"{icon} Battery: <b>{pct}%</b>{warning}\n"
+               f"<code>[{bar}]</code>\n"
+               f"{'─' * 22}\n"
+               f"🛣️ Est. Range: <b>{current_range:.1f} km</b>\n"
+               f"⚡ Charge Rate: <b>{get_charge_rate(car[3])} kW</b>{weather_text}")
     await msg_obj.reply_html(msg, reply_markup=InlineKeyboardMarkup([back_row(lang)]))
 
 # ================================================================
@@ -461,9 +474,8 @@ async def history(u: Update, c: ContextTypes.DEFAULT_TYPE):
             ("\n<i>⭐ Premium: မှတ်တမ်း အကန့်အသတ်မဲ့</i>" if lang=="MM"
              else "\n<i>⭐ Premium: Unlimited history</i>"))
     title = "📜 <b>Battery မှတ်တမ်း</b>" if lang=="MM" else "📜 <b>Battery History</b>"
-    kb = [[InlineKeyboardButton("📜 Export PDF (Premium)", callback_data="export_pdf")], back_row(lang)]
     await msg_obj.reply_html(title + note + "\n\n" + utils.format_logs_chart(logs),
-                              reply_markup=InlineKeyboardMarkup(kb))
+                              reply_markup=back_button(lang))
 
 # ================================================================
 # FIND STATION — FIXED
@@ -547,23 +559,8 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                    f"{conn_text}\n"
                    f"   <a href=\"{maps_link}\">🗺️ Navigate</a> | <a href=\"{view_link}\">📌 View on Map</a>")
 
-            # --- Community Reporting Integration ---
-            s_id = str(station.get("id", "0"))
-            latest_report = db.get_latest_station_report(s_id)
-            if latest_report:
-                rep_status, rep_time = latest_report
-                # Format time (simplified)
-                rep_time_str = str(rep_time)[5:16] # MM-DD HH:MM
-                status_icon = "🟢" if "Online" in rep_status else "🔴" if "Broken" in rep_status else "🟡"
-                msg += f"\n\n📢 <b>Status:</b> {status_icon} {rep_status} ({rep_time_str})"
-
             # Keyboard for this station
             station_kb = []
-            
-            # Report Button
-            report_label = "📢 Report Status" if lang == "MM" else "📢 Report Status"
-            station_kb.append([InlineKeyboardButton(report_label, callback_data=f"rep_menu_{s_id}")])
-
             if is_prem:
                 raw_name = str(info.get("title", "Unknown"))[:20]
                 raw_addr = str(info.get("addressLine1", "") or "N/A")[:30]
@@ -898,58 +895,32 @@ async def add_reminder_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def do_add_reminder(u: Update, c: ContextTypes.DEFAULT_TYPE, rtype: str):
     uid = u.effective_user.id
     lang = get_lang(uid)
-    c.user_data["rem_type"] = rtype
-    
     if u.callback_query:
         await u.callback_query.answer()
         msg_obj = u.callback_query.message
     else:
         msg_obj = u.message
 
-    msg = ("📅 ဘယ်နေ့မှာ သတိပေးရမလဲ? (YYYY-MM-DD ပုံစံဖြင့် ရိုက်ပါ)\nဥပမာ: 2024-12-31" 
-           if lang == "MM" else 
-           "📅 When should I remind you? (Enter as YYYY-MM-DD)\nExample: 2024-12-31")
-    await msg_obj.reply_text(msg)
-    return S_REM_DATE
+    defaults = {
+        "battery": ("Battery 20% အောက်ဆင်းရင် သတိပေး", "Low battery warning active"),
+        "tire":    ("5,000 km တိုင်း တာယာ rotate လုပ်ပါ", "Rotate tires every 5,000 km"),
+        "insurance": ("Insurance ကုန်ဆုံးမည့် ၃၀ ရက်မတိုင်ခင် သတိပေး", "Alert 30 days before insurance expires"),
+        "service": ("10,000 km တိုင်း service လုပ်ပါ", "Service due every 10,000 km"),
+    }
+    mm_val, en_val = defaults.get(rtype, ("Reminder", "Reminder"))
+    value = mm_val if lang == "MM" else en_val
+    db.add_reminder(uid, rtype, value)
 
-async def save_reminder_date(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    uid = u.effective_user.id
-    lang = get_lang(uid)
-    date_str = u.message.text.strip()
-    rtype = c.user_data.get("rem_type", "custom")
-    
-    try:
-        # Validate date format
-        due_date = datetime.strptime(date_str, "%Y-%m-%d")
-        if due_date < datetime.now():
-            await u.message.reply_text("❌ ရက်စွဲသည် အတိတ်ဖြစ်နေပါသည်။ နောင်လာမည့် ရက်စွဲကို ရိုက်ပါ။")
-            return S_REM_DATE
-            
-        defaults = {
-            "battery": ("Battery 20% အောက်ဆင်းရင် သတိပေး", "Low battery warning active"),
-            "tire":    ("တာယာ rotate လုပ်ရန် အချိန်တန်ပြီ", "Time to rotate tires"),
-            "insurance": ("Insurance သက်တမ်းတိုးရန် သတိပေးချက်", "Insurance renewal reminder"),
-            "service": ("ကား service လုပ်ရန် အချိန်တန်ပြီ", "Car service due reminder"),
-        }
-        mm_val, en_val = defaults.get(rtype, ("Reminder", "Reminder"))
-        value = mm_val if lang == "MM" else en_val
-        
-        db.add_reminder(uid, rtype, value, due_date.isoformat())
-
-        icons = {"battery": "🔋", "tire": "🔧", "insurance": "📋", "service": "🔧"}
-        icon = icons.get(rtype, "🔔")
-        await u.message.reply_html(
-            f"✅ {icon} <b>{rtype.title()} Reminder</b> သိမ်းပြီးပါပြီ!\n📅 ရက်စွဲ: {date_str}"
-            if lang == "MM" else
-            f"✅ {icon} <b>{rtype.title()} Reminder</b> saved!\n📅 Date: {date_str}",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📋 Reminders ကြည့်" if lang=="MM" else "📋 View Reminders", callback_data="reminders")],
-                back_row(lang)
-            ]))
-        return ConversationHandler.END
-    except ValueError:
-        await u.message.reply_text("❌ ရက်စွဲပုံစံ မှားနေပါသည်။ YYYY-MM-DD ပုံစံဖြင့် ရိုက်ပါ။ (ဥပမာ: 2024-12-31)")
-        return S_REM_DATE
+    icons = {"battery": "🔋", "tire": "🔧", "insurance": "📋", "service": "🔧"}
+    icon = icons.get(rtype, "🔔")
+    await msg_obj.reply_html(
+        f"✅ {icon} <b>{rtype.title()} Reminder</b> သိမ်းပြီးပါပြီ!\n{value}"
+        if lang == "MM" else
+        f"✅ {icon} <b>{rtype.title()} Reminder</b> saved!\n{value}",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 Reminders ကြည့်" if lang=="MM" else "📋 View Reminders", callback_data="reminders")],
+            back_row(lang)
+        ]))
 
 # ================================================================
 # AI CHAT (Premium)
@@ -1066,52 +1037,10 @@ async def tips(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid)
     msg_obj = u.callback_query.message if u.callback_query else u.message
-    
-    kb = [
-        [InlineKeyboardButton("🔋 Battery Care", callback_data="tip_battery"),
-         InlineKeyboardButton("⚡ Charging", callback_data="tip_charging")],
-        [InlineKeyboardButton("🛣️ Driving Range", callback_data="tip_range"),
-         InlineKeyboardButton("💰 Savings", callback_data="tip_savings")],
-        back_row(lang)
-    ]
-    
-    msg = ("💡 <b>EV Knowledge Base</b>\n\nဗဟုသုတ ဆောင်းပါးများကို အောက်ပါ Menu တွင် ရွေးချယ်ဖတ်ရှုနိုင်ပါသည်။"
+    msg = ("💡 <b>EV Tips:</b>\n\n• 🟢 Battery 20%-80%\n• 🌙 Off-peak မှာ အားသွင်းပါ\n• ❄️ အအေးမှာ range ကျနိုင်\n• ⚡ DC Fast Charge မကြာမကြာ မသုံးပါနဲ့"
            if lang == "MM" else
-           "💡 <b>EV Knowledge Base</b>\n\nSelect a topic below to read helpful EV tips.")
-    
-    if u.callback_query:
-        await msg_obj.edit_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
-    else:
-        await msg_obj.reply_html(msg, reply_markup=InlineKeyboardMarkup(kb))
-
-async def tip_detail(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    query = u.callback_query
-    uid = u.effective_user.id
-    lang = get_lang(uid)
-    data = query.data
-    
-    tips_data = {
-        "tip_battery": {
-            "MM": "🔋 <b>Battery Care</b>\n\n1. 20%-80% ကြားထားပါ - Lithium-ion battery တွေဟာ 0% ရောက်တာ ဒါမှမဟုတ် 100% အမြဲရှိနေတာကို မကြိုက်ပါဘူး။\n2. အပူလွန်ကဲတာ ရှောင်ပါ - နေပူထဲမှာ ကားကို အကြာကြီး ရပ်မထားပါနဲ့။\n3. အားအပြည့်သွင်းပြီးရင် ချက်ချင်းသုံးပါ - 100% သွင်းပြီး အကြာကြီး ရပ်ထားတာက battery degradation ဖြစ်စေပါတယ်။",
-            "EN": "🔋 <b>Battery Care</b>\n\n1. Keep it between 20%-80% - Lithium-ion batteries last longer when not fully drained or fully charged.\n2. Avoid extreme heat - Don't park in direct sunlight for long periods.\n3. Use soon after 100% charge - Don't leave it at 100% for days."
-        },
-        "tip_charging": {
-            "MM": "⚡ <b>Charging Tips</b>\n\n1. AC Charging ကို ပိုသုံးပါ - နေ့စဉ်အားသွင်းဖို့အတွက် AC (Slow/Home) charging က battery အတွက် ပိုကောင်းပါတယ်။\n2. DC Fast Charge ကို လိုအပ်မှသုံးပါ - ခရီးဝေးသွားမှသာ DC ကို သုံးသင့်ပါတယ်။\n3. ညဘက်အားသွင်းပါ - ညဘက်မှာ မီးအားပိုငြိမ်သလို မီတာခ သက်သာတဲ့ စနစ်ရှိရင် ပိုကိုက်ပါတယ်။",
-            "EN": "⚡ <b>Charging Tips</b>\n\n1. Use AC Charging - Home charging is better for daily battery health.\n2. Limit DC Fast Charging - Use it only for long trips.\n3. Charge at night - Grid is more stable and it's often cheaper."
-        },
-        "tip_range": {
-            "MM": "🛣️ <b>Driving Range</b>\n\n1. အရှိန်ကို ထိန်းမောင်းပါ - 80-90 km/h ဟာ EV တွေအတွက် range အကောင်းဆုံး အရှိန်ဖြစ်ပါတယ်။\n2. Regenerative Braking သုံးပါ - ဘရိတ်အုပ်မယ့်အစား အရှိန်လျှော့ပြီး battery ထဲ ပြန်သွင်းပါ။\n3. တာယာလေပေါင် စစ်ပါ - လေပေါင်နည်းရင် range လျော့ပါတယ်။",
-            "EN": "🛣️ <b>Driving Range</b>\n\n1. Maintain steady speed - 80-90 km/h is usually the sweet spot for efficiency.\n2. Use Regenerative Braking - Maximize energy recovery.\n3. Check Tire Pressure - Low pressure increases drag and reduces range."
-        },
-        "tip_savings": {
-            "MM": "💰 <b>Cost Savings</b>\n\n1. အိမ်မှာ အားသွင်းပါ - အများသုံး station တွေထက် အိမ်မှာသွင်းတာက ၃ ဆလောက် ပိုသက်သာပါတယ်။\n2. ပြုပြင်ထိန်းသိမ်းမှု - EV တွေဟာ အင်ဂျင်ဝိုင်လဲစရာမလိုလို့ ဆီကားထက် maintenance ၇၀% ကျော် သက်သာပါတယ်။\n3. မောင်းနှင်မှုမှတ်တမ်း - Bot ရဲ့ Expense Tracker ကို သုံးပြီး လစဉ်ကုန်ကျစရိတ်ကို စောင့်ကြည့်ပါ။",
-            "EN": "💰 <b>Cost Savings</b>\n\n1. Charge at home - It's usually 3x cheaper than public stations.\n2. Maintenance - EVs save 70% on maintenance compared to gas cars.\n3. Track Expenses - Use this bot's Expense Tracker to monitor monthly costs."
-        }
-    }
-    
-    msg = tips_data.get(data, {}).get(lang, "No content.")
-    kb = [[InlineKeyboardButton("🔙 Back to Tips", callback_data="tips")]]
-    await query.message.edit_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+           "💡 <b>EV Tips:</b>\n\n• 🟢 Keep battery 20%-80%\n• 🌙 Charge during off-peak\n• ❄️ Cold reduces range\n• ⚡ Avoid frequent DC Fast Charging")
+    await msg_obj.reply_html(msg, reply_markup=back_button(lang))
 
 async def lang_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(u.effective_user.id)
@@ -1232,13 +1161,17 @@ async def bhealth_get_mileage(u: Update, c: ContextTypes.DEFAULT_TYPE):
         yearly_deg = max(0.5, (100 - soh) / max(1, mileage / 20000)) * 0.8
         pred_1yr = max(0, soh - yearly_deg)
         pred_3yr = max(0, soh - yearly_deg * 3)
+        soh_bar = utils.format_battery_bar(int(soh), 15)
         msg = (f"🔋 <b>Battery Health Report</b>\n\n"
-               f"📊 SOH: <b>{soh}%</b> — {status}\n"
-               f"🛣️ Mileage: <b>{mileage:,} km</b>\n\n"
-               f"💡 {tip}\n\n"
+               f"📊 SOH: <b>{soh}%</b>\n"
+               f"<code>[{soh_bar}]</code> {status}\n"
+               f"🛣️ Mileage: <b>{mileage:,} km</b>\n"
+               f"{'─' * 22}\n"
+               f"💡 {tip}\n"
+               f"{'─' * 22}\n"
                f"📈 <b>{'ခန့်မှန်းချက်' if lang=='MM' else 'Predictions'}:</b>\n"
-               f"• {'၁ နှစ်နောက်' if lang=='MM' else '1 year'}: ~{pred_1yr:.1f}%\n"
-               f"• {'၃ နှစ်နောက်' if lang=='MM' else '3 years'}: ~{pred_3yr:.1f}%")
+               f"• {'၁ နှစ်နောက်' if lang=='MM' else '1 yr'}: <b>~{pred_1yr:.1f}%</b>\n"
+               f"• {'၃ နှစ်နောက်' if lang=='MM' else '3 yrs'}: <b>~{pred_3yr:.1f}%</b>")
         await u.message.reply_html(msg, reply_markup=InlineKeyboardMarkup([back_row(lang)]))
         return ConversationHandler.END
     except ValueError:
@@ -1436,23 +1369,6 @@ async def send_off_peak_reminder(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Reminder failed {uid}: {e}")
 
-async def check_and_send_reminders(context: ContextTypes.DEFAULT_TYPE):
-    due_reminders = db.get_due_reminders()
-    for r in due_reminders:
-        # r = (id, user_id, type, value, note, due_date, is_sent, ...)
-        rid, uid, rtype, val = r[0], r[1], r[2], r[3]
-        try:
-            lang = db.get_language(uid)
-            icons = {"battery": "🔋", "tire": "🔧", "insurance": "📋", "service": "🔧"}
-            icon = icons.get(rtype, "🔔")
-            msg = (f"🔔 <b>{rtype.title()} Reminder!</b>\n\n{val}"
-                   if lang == "MM" else
-                   f"🔔 <b>{rtype.title()} Reminder!</b>\n\n{val}")
-            await context.bot.send_message(chat_id=uid, text=msg, parse_mode="HTML")
-            db.mark_reminder_sent(rid)
-        except Exception as e:
-            logger.error(f"Failed to send reminder {rid} to {uid}: {e}")
-
 async def cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(u.effective_user.id)
     await u.message.reply_text("ဖျက်သိမ်းပြီး။" if lang=="MM" else "Cancelled.",
@@ -1473,8 +1389,6 @@ def main():
     app.job_queue.run_daily(send_off_peak_reminder, time=dtime(hour=22, minute=0))
     # Weekly summary every Monday 8AM
     app.job_queue.run_daily(send_weekly_summary, time=dtime(hour=8, minute=0))
-    # Check for reminders every 30 minutes
-    app.job_queue.run_repeating(check_and_send_reminders, interval=1800, first=10)
 
     # Shared fallbacks — cancel command + button_handler for all callbacks
     shared_fallbacks = [
@@ -1546,12 +1460,6 @@ def main():
         fallbacks=shared_fallbacks,
         allow_reentry=True)
 
-    rem_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(do_add_reminder, pattern="^add_reminder_")],
-        states={S_REM_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_reminder_date)]},
-        fallbacks=shared_fallbacks,
-        allow_reentry=True)
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", admin_stats))
     app.add_handler(reg_conv)
@@ -1563,7 +1471,6 @@ def main():
     app.add_handler(ai_conv)
     app.add_handler(bhealth_conv)
     app.add_handler(expense_conv)
-    app.add_handler(rem_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.LOCATION, location_handler))
 
