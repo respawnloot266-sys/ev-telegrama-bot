@@ -159,7 +159,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(uid)
     car = db.get_active_car(uid)
     name = update.effective_user.first_name or ""
-        plan_badge = "⭐ Premium" if db.is_premium(uid) else "🆓 Free"
+    plan_badge = "⭐ Premium" if db.is_premium(uid) else "🆓 Free"
     points = db.get_user_points(uid)
     if car:
         pct = car[7]
