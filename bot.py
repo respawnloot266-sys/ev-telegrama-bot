@@ -561,6 +561,24 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
             # Keyboard for this station
             station_kb = []
+            # Community report status
+            station_id = f"{s_lat:.4f}_{s_lon:.4f}"
+            last_report = db.get_station_last_report(station_id)
+            if last_report:
+                from datetime import datetime as dt2
+                status_icons = {"online": "🟢", "broken": "🔴", "no_power": "🟡", "busy": "🟠"}
+                status_labels = {"online": "အလုပ်လုပ်နေတယ်", "broken": "စက်ပျက်", "no_power": "မီးပျက်", "busy": "လူကျနေတယ်"}
+                s_icon = status_icons.get(last_report[0], "⚪")
+                s_label = status_labels.get(last_report[0], last_report[0])
+                try:
+                    reported_time = dt2.fromisoformat(last_report[1])
+                    mins_ago = int((dt2.now() - reported_time).total_seconds() / 60)
+                    time_str = f"{mins_ago} မိနစ်" if mins_ago < 60 else f"{mins_ago//60} နာရီ"
+                except:
+                    time_str = "မကြာမီ"
+                msg += f"\n   {s_icon} <i>Last report ({time_str} ago): {s_label}</i>"
+            station_kb.append([InlineKeyboardButton(
+                f"📢 Report Status", callback_data=f"report_station_{station_id}_{name[:15]}")])
             if is_prem:
                 raw_name = str(info.get("title", "Unknown"))[:20]
                 raw_addr = str(info.get("addressLine1", "") or "N/A")[:30]
@@ -1036,11 +1054,29 @@ async def show_favorites(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def tips(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid)
+    if u.callback_query: await u.callback_query.answer()
     msg_obj = u.callback_query.message if u.callback_query else u.message
-    msg = ("💡 <b>EV Tips:</b>\n\n• 🟢 Battery 20%-80%\n• 🌙 Off-peak မှာ အားသွင်းပါ\n• ❄️ အအေးမှာ range ကျနိုင်\n• ⚡ DC Fast Charge မကြာမကြာ မသုံးပါနဲ့"
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📚 Knowledge Base", callback_data="knowledge_base"),
+         InlineKeyboardButton("📤 Export History ⭐", callback_data="export_history")],
+        back_row(lang)
+    ])
+    msg = ("💡 <b>EV Tips:</b>\n\n"
+           "• 🟢 Battery 20%-80% ကြားထားပါ\n"
+           "• 🌙 Off-peak မှာ အားသွင်းပါ\n"
+           "• ❄️ အအေးမှာ range ကျနိုင်တယ်\n"
+           "• ⚡ DC Fast Charge မကြာမကြာ မသုံးပါနဲ့\n"
+           "• 🛣️ Eco mode သုံးရင် range တိုးတယ်\n\n"
+           "📚 ပိုသိချင်ရင် Knowledge Base ကြည့်ပါ!"
            if lang == "MM" else
-           "💡 <b>EV Tips:</b>\n\n• 🟢 Keep battery 20%-80%\n• 🌙 Charge during off-peak\n• ❄️ Cold reduces range\n• ⚡ Avoid frequent DC Fast Charging")
-    await msg_obj.reply_html(msg, reply_markup=back_button(lang))
+           "💡 <b>EV Tips:</b>\n\n"
+           "• 🟢 Keep battery 20%-80%\n"
+           "• 🌙 Charge during off-peak hours\n"
+           "• ❄️ Cold weather reduces range\n"
+           "• ⚡ Avoid frequent DC Fast Charging\n"
+           "• 🛣️ Eco mode increases range\n\n"
+           "📚 Learn more in the Knowledge Base!")
+    await msg_obj.reply_html(msg, reply_markup=kb)
 
 async def lang_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(u.effective_user.id)
@@ -1329,6 +1365,203 @@ async def monthly_report(u: Update, c: ContextTypes.DEFAULT_TYPE):
         msg += f"{icon} {cat.title()}: <b>MMK {amt:,}</b> ({pct}%)\n<code>{bar}</code>\n\n"
     msg += f"💰 <b>Total: MMK {grand_total:,}</b>"
     await msg_obj.reply_html(msg, reply_markup=InlineKeyboardMarkup([back_row(lang)]))
+
+
+# ================================================================
+# COMMUNITY STATION REPORTING
+# ================================================================
+async def report_station_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query: await u.callback_query.answer()
+    data = u.callback_query.data.replace("report_station_", "")
+    parts = data.split("_", 1)
+    station_id = "_".join(parts[0].split("_")[:2]) if len(parts) > 0 else data
+    # Parse: report_station_{lat}_{lon}_{name}
+    raw = u.callback_query.data.replace("report_station_", "")
+    chunks = raw.split("_")
+    s_id = f"{chunks[0]}_{chunks[1]}"
+    s_name = "_".join(chunks[2:]) if len(chunks) > 2 else "Station"
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🟢 အလုပ်လုပ်နေတယ်", callback_data=f"do_report_{s_id}_online_{s_name}"),
+         InlineKeyboardButton("🟠 လူကျနေတယ်", callback_data=f"do_report_{s_id}_busy_{s_name}")],
+        [InlineKeyboardButton("🔴 စက်ပျက်နေတယ်", callback_data=f"do_report_{s_id}_broken_{s_name}"),
+         InlineKeyboardButton("🟡 မီးပျက်နေတယ်", callback_data=f"do_report_{s_id}_no_power_{s_name}")],
+        back_row(lang)
+    ])
+    await u.callback_query.message.reply_text(
+        f"📢 Station အခြေအနေ Report လုပ်ပါ:\n<b>{s_name}</b>"
+        if lang == "MM" else
+        f"📢 Report station status:\n<b>{s_name}</b>",
+        reply_markup=kb, parse_mode="HTML")
+
+async def do_station_report(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query: await u.callback_query.answer()
+    raw = u.callback_query.data.replace("do_report_", "")
+    chunks = raw.split("_")
+    s_id = f"{chunks[0]}_{chunks[1]}"
+    status = chunks[2] if len(chunks) > 2 else "online"
+    s_name = "_".join(chunks[3:]) if len(chunks) > 3 else "Station"
+
+    db.add_station_report(s_id, s_name, status, uid)
+
+    status_labels = {"online": "🟢 အလုပ်လုပ်နေတယ်", "broken": "🔴 စက်ပျက်နေတယ်",
+                     "no_power": "🟡 မီးပျက်နေတယ်", "busy": "🟠 လူကျနေတယ်"}
+    label = status_labels.get(status, status)
+    await u.callback_query.message.reply_html(
+        f"✅ <b>Report တင်ပြီးပါပြီ!</b>\n{s_name}: {label}\n\n"
+        f"<i>မင်းရဲ့ report ကြောင့် EV community အားလုံး အကျိုးရှိပါတယ်! 🙏</i>"
+        if lang == "MM" else
+        f"✅ <b>Report submitted!</b>\n{s_name}: {label}\n\n"
+        f"<i>Thank you for helping the EV community! 🙏</i>",
+        reply_markup=InlineKeyboardMarkup([back_row(lang)]))
+
+# ================================================================
+# TRIP LOG EXPORT (Premium) — CSV
+# ================================================================
+async def export_history(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query: await u.callback_query.answer()
+    msg_obj = u.callback_query.message if u.callback_query else u.message
+
+    ok, data = check_premium(uid, lang)
+    if not ok:
+        return await msg_obj.reply_html(data[0], reply_markup=data[1])
+
+    logs = db.get_logs(uid)
+    expenses = db.get_monthly_expenses(uid, datetime.now().year, datetime.now().month)
+
+    if not logs and not expenses:
+        return await msg_obj.reply_text(
+            "📊 Export လုပ်ရန် data မရှိသေးပါ။" if lang == "MM" else "📊 No data to export yet.",
+            reply_markup=back_button(lang))
+
+    # Build CSV
+    import io
+    output = io.StringIO()
+    output.write("Type,Date,Category,Value,Note\n")
+
+    for log in logs:
+        date = str(log[5])[:10]
+        output.write(f"Battery Update,{date},Battery %,{log[4]},\n")
+
+    for exp in expenses:
+        date = str(exp[5])[:10]
+        output.write(f"Expense,{date},{exp[2]},{exp[3]},{exp[4]}\n")
+
+    csv_bytes = output.getvalue().encode("utf-8-sig")
+    import io as bio
+    buf = bio.BytesIO(csv_bytes)
+    buf.name = f"ev_history_{datetime.now().strftime('%Y%m')}.csv"
+
+    await msg_obj.reply_document(
+        document=buf,
+        filename=buf.name,
+        caption="📊 EV History Export\n✅ Excel မှာ ဖွင့်နိုင်ပါတယ်။" if lang == "MM"
+                else "📊 EV History Export\n✅ Open with Excel or Google Sheets.")
+
+# ================================================================
+# EV KNOWLEDGE BASE
+# ================================================================
+KB_ARTICLES = {
+    "charge_basics": {
+        "MM": ("🔋 အားသွင်းနည်း အခြေခံ",
+               "• AC Charging (Level 2): ညဘက် အိမ်မှာ အားသွင်းဖို့ အသင့်တော်ဆုံး\n"
+               "• DC Fast Charging: ခရီးရှည်မောင်းရင် အသုံးပြုပါ\n"
+               "• Battery 20-80% ကြားထားပါ — lifetime တိုးပါတယ်\n"
+               "• Full charge (100%) ကို နေ့တိုင်း မလုပ်ပါနဲ့"),
+        "EN": ("🔋 Charging Basics",
+               "• AC Charging (Level 2): Best for home overnight charging\n"
+               "• DC Fast Charging: Use for long trips only\n"
+               "• Keep battery 20-80% — extends battery life\n"
+               "• Avoid daily 100% charges")
+    },
+    "battery_life": {
+        "MM": ("🔋 Battery သက်တမ်း တိုးနည်း",
+               "• 20-80% ကြားသာ အားသွင်းပါ\n"
+               "• DC Fast Charge မကြာမကြာ မသုံးပါနဲ့\n"
+               "• အပူချိန်မြင့်သော နေရာမှာ ကားရပ်ထားတာ ရှောင်ပါ\n"
+               "• တစ်လတစ်ကြိမ် 100% အထိ calibrate လုပ်ပါ\n"
+               "• ချမ်းသောနေရာမှာ ကားသိမ်းရင် battery ကျနိုင်တယ်"),
+        "EN": ("🔋 Extending Battery Life",
+               "• Charge between 20-80%\n"
+               "• Minimize DC Fast Charging\n"
+               "• Avoid parking in extreme heat\n"
+               "• Calibrate monthly with full charge\n"
+               "• Cold storage can reduce capacity")
+    },
+    "myanmar_ev": {
+        "MM": ("🇲🇲 မြန်မာ EV အချက်အလက်",
+               "• Toyota bZ3X, bZ4X — Myanmar မှာ အရောင်းရဆုံး\n"
+               "• Yangon မှာ Charging Station တွေ ပိုရှိတယ်\n"
+               "• KPay/Wave နဲ့ charge ငွေပေးနိုင်တဲ့ Station တချို့ ရှိတယ်\n"
+               "• ညဘက် off-peak မှာ အားသွင်းရင် လျှပ်စစ်ဓာတ်အားခ သက်သာတယ်\n"
+               "• Myanmar ရဲ့ EV incentives — import tax လျှော့ချပေးတယ်"),
+        "EN": ("🇲🇲 Myanmar EV Info",
+               "• Toyota bZ3X, bZ4X — Most popular in Myanmar\n"
+               "• More charging stations available in Yangon\n"
+               "• Some stations accept KPay/Wave payment\n"
+               "• Charge during off-peak for lower electricity cost\n"
+               "• Myanmar EV incentives include reduced import tax")
+    },
+    "range_tips": {
+        "MM": ("🛣️ Range တိုးနည်း Tips",
+               "• Speed 80-100 km/h မှာ range အကောင်းဆုံး\n"
+               "• AC မသုံးရင် range 10-15% တိုးတယ်\n"
+               "• Eco mode သုံးပါ\n"
+               "• တောင်ကြီးဆင်းရင် regenerative braking သုံးပါ\n"
+               "• တာယာဖိအား မှန်ကန်အောင် ထိန်းပါ"),
+        "EN": ("🛣️ Range Optimization Tips",
+               "• Optimal speed: 80-100 km/h\n"
+               "• Reducing AC use adds 10-15% range\n"
+               "• Use Eco mode whenever possible\n"
+               "• Use regenerative braking on downhill\n"
+               "• Maintain correct tire pressure")
+    },
+}
+
+async def knowledge_base(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query: await u.callback_query.answer()
+    msg_obj = u.callback_query.message if u.callback_query else u.message
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔋 အားသွင်းနည်း အခြေခံ" if lang=="MM" else "🔋 Charging Basics",
+                               callback_data="kb_charge_basics")],
+        [InlineKeyboardButton("🔋 Battery သက်တမ်း တိုးနည်း" if lang=="MM" else "🔋 Battery Life Tips",
+                               callback_data="kb_battery_life")],
+        [InlineKeyboardButton("🇲🇲 မြန်မာ EV အချက်အလက်" if lang=="MM" else "🇲🇲 Myanmar EV Info",
+                               callback_data="kb_myanmar_ev")],
+        [InlineKeyboardButton("🛣️ Range တိုးနည်း Tips" if lang=="MM" else "🛣️ Range Tips",
+                               callback_data="kb_range_tips")],
+        back_row(lang)
+    ])
+    await msg_obj.reply_html(
+        "💡 <b>EV Knowledge Base</b>\n\nဘာကို သိချင်တာလဲ?"
+        if lang == "MM" else
+        "💡 <b>EV Knowledge Base</b>\n\nWhat would you like to learn?",
+        reply_markup=kb)
+
+async def knowledge_base_article(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    if u.callback_query: await u.callback_query.answer()
+    key = u.callback_query.data.replace("kb_", "")
+    article = KB_ARTICLES.get(key)
+    if not article:
+        return
+    title, body = article.get(lang, article.get("MM"))
+    await u.callback_query.message.reply_html(
+        f"<b>{title}</b>\n\n{body}",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Knowledge Base", callback_data="knowledge_base")],
+            back_row(lang)
+        ]))
 
 
 async def send_weekly_summary(context: ContextTypes.DEFAULT_TYPE):
