@@ -22,33 +22,33 @@ ELECTRICITY_RATE_MMK = 200
 # STATE CONSTANTS — unique values, no conflicts
 # ================================================================
 # Registration
-S_CAR_NAME   = 10
-S_MODEL      = 11
-S_CAP        = 12
-S_RANGE      = 13
+S_CAR_NAME   = 100
+S_MODEL      = 101
+S_CAP        = 102
+S_RANGE      = 103
 # Battery update
-S_PCT        = 20
+S_PCT        = 200
 # Charge time
-S_CT_START   = 30
-S_CT_END     = 31
+S_CT_START   = 300
+S_CT_END     = 301
 # Payment
-S_PAYMENT    = 40
+S_PAYMENT    = 400
 # Route
-S_RT_FROM    = 50
-S_RT_TO      = 51
-S_RT_PCT     = 52
+S_RT_FROM    = 500
+S_RT_TO      = 501
+S_RT_PCT     = 502
 # Cost
-S_COST_START = 60
-S_COST_END   = 61
+S_COST_START = 600
+S_COST_END   = 601
 # AI Chat
-S_AI_CHAT    = 70
+S_AI_CHAT    = 700
 # Battery Health
-S_BH_SOH     = 80
-S_BH_MILEAGE = 81
+S_BH_SOH     = 800
+S_BH_MILEAGE = 801
 # Expense
-S_EXP_CAT    = 90
-S_EXP_AMT    = 91
-S_EXP_NOTE   = 92
+S_EXP_CAT    = 900
+S_EXP_AMT    = 901
+S_EXP_NOTE   = 902
 
 CAR_CHARGE_RATES = {
     "tesla model 3": 250, "tesla model y": 250,
@@ -1208,7 +1208,7 @@ async def expense_set_cat(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def expense_get_amt(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(u.effective_user.id)
     try:
-        amt = int(u.message.text.strip().replace(",", ""))
+        amt = int(u.message.text.strip().replace(",", "").replace(" ", ""))
         if amt <= 0: raise ValueError
         c.user_data["exp_amt"] = amt
         await u.message.reply_text(
@@ -1216,8 +1216,11 @@ async def expense_get_amt(u: Update, c: ContextTypes.DEFAULT_TYPE):
             if lang == "MM" else
             "📝 Add a note or type - to skip")
         return S_EXP_NOTE
-    except ValueError:
-        await u.message.reply_text("❌ ဂဏန်းသာ ရိုက်ပါ။ (ဥပမာ: 5000)")
+    except (ValueError, TypeError):
+        await u.message.reply_text(
+            "❌ ငွေပမာဏ ဂဏန်းဖြင့်သာ ရိုက်ပါ။ (ဥပမာ: 5000)"
+            if lang == "MM" else
+            "❌ Enter amount in numbers only. (e.g. 5000)")
         return S_EXP_AMT
 
 async def expense_save(u: Update, c: ContextTypes.DEFAULT_TYPE):
