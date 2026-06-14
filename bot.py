@@ -236,6 +236,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_reminders(update, context)
     elif data.startswith("admin_"):
         await admin_callback_handler(update, context)
+    elif data.startswith("rep_menu_"):
+        s_id = data.replace("rep_menu_", "")
+        kb = [
+            [InlineKeyboardButton("🟢 Online", callback_data=f"rep_set_{s_id}_Online"),
+             InlineKeyboardButton("🟡 Busy", callback_data=f"rep_set_{s_id}_Busy")],
+            [InlineKeyboardButton("🔴 Broken", callback_data=f"rep_set_{s_id}_Broken"),
+             InlineKeyboardButton("🔌 No Power", callback_data=f"rep_set_{s_id}_No Power")],
+            [InlineKeyboardButton("🔙 Back", callback_data="back_menu")]
+        ]
+        msg = "📢 <b>Station Status ကို ရွေးချယ်ပေးပါ:</b>" if lang == "MM" else "📢 <b>Select Station Status:</b>"
+        await query.message.edit_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+    elif data.startswith("rep_set_"):
+        # Format: rep_set_{s_id}_{status}
+        parts = data.split("_")
+        if len(parts) >= 4:
+            s_id = parts[2]
+            status = parts[3]
+            db.add_station_report(s_id, uid, status)
+            msg = f"✅ Report တင်ပြီးပါပြီ: <b>{status}</b>" if lang == "MM" else f"✅ Status reported: <b>{status}</b>"
+            await query.answer(msg.replace("<b>", "").replace("</b>", ""), show_alert=True)
+            await start(update, context)
 
 # ================================================================
 # REGISTRATION
@@ -506,8 +527,23 @@ async def location_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                    f"{conn_text}\n"
                    f"   <a href=\"{maps_link}\">🗺️ Navigate</a> | <a href=\"{view_link}\">📌 View on Map</a>")
 
+            # --- Community Reporting Integration ---
+            s_id = str(station.get("id", "0"))
+            latest_report = db.get_latest_station_report(s_id)
+            if latest_report:
+                rep_status, rep_time = latest_report
+                # Format time (simplified)
+                rep_time_str = str(rep_time)[5:16] # MM-DD HH:MM
+                status_icon = "🟢" if "Online" in rep_status else "🔴" if "Broken" in rep_status else "🟡"
+                msg += f"\n\n📢 <b>Status:</b> {status_icon} {rep_status} ({rep_time_str})"
+
             # Keyboard for this station
             station_kb = []
+            
+            # Report Button
+            report_label = "📢 Report Status" if lang == "MM" else "📢 Report Status"
+            station_kb.append([InlineKeyboardButton(report_label, callback_data=f"rep_menu_{s_id}")])
+
             if is_prem:
                 raw_name = str(info.get("title", "Unknown"))[:20]
                 raw_addr = str(info.get("addressLine1", "") or "N/A")[:30]

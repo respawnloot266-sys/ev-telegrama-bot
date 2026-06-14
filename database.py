@@ -466,3 +466,37 @@ def get_weekly_stats(uid):
         res = []
     conn.close()
     return res
+
+# --- STATION REPORTS ---
+def init_reports_db():
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS station_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            station_id TEXT,
+            user_id INTEGER,
+            status TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def add_station_report(station_id, user_id, status):
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("INSERT INTO station_reports (station_id, user_id, status) VALUES (?, ?, ?)",
+              (station_id, user_id, status))
+    conn.commit()
+    conn.close()
+
+def get_latest_station_report(station_id):
+    conn = connect_db()
+    c = conn.cursor()
+    c.execute("SELECT status, timestamp FROM station_reports WHERE station_id = ? ORDER BY timestamp DESC LIMIT 1", (station_id,))
+    res = c.fetchone()
+    conn.close()
+    return res
+
+init_reports_db()
