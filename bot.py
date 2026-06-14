@@ -8,6 +8,7 @@ from telegram.ext import (Application, CommandHandler, MessageHandler, filters,
 import database as db
 import charge_api
 import utils
+import exporter
 from admin_bot import (send_payment_to_admin, admin_callback_handler, admin_stats,
                        ADMIN_CHAT_ID, KPAY_NUMBER, WAVE_NUMBER, PLANS)
 
@@ -193,6 +194,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "hist":                       await history(update, context)
     elif data == "find":                       await find_station(update, context)
     elif data == "tips":                       await tips(update, context)
+    elif data.startswith("tip_"):              await tip_detail(update, context)
     elif data == "cars":                       await show_cars(update, context)
     elif data == "favs":                       await show_favorites(update, context)
     elif data == "lang":                       await lang_menu(update, context)
@@ -257,6 +259,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = f"✅ Report တင်ပြီးပါပြီ: <b>{status}</b>" if lang == "MM" else f"✅ Status reported: <b>{status}</b>"
             await query.answer(msg.replace("<b>", "").replace("</b>", ""), show_alert=True)
             await start(update, context)
+    elif data == "export_pdf":
+        if not db.is_premium(uid):
+            ok, data = check_premium(uid, lang)
+            return await query.message.reply_html(data[0], reply_markup=data[1])
+        
+        car = db.get_active_car(uid)
+        logs = db.get_logs(uid)
+        if not car or not logs:
+            return await query.answer("❌ မှတ်တမ်း မရှိပါ။", show_alert=True)
+            
+        pdf_path = exporter.generate_trip_log_pdf(uid, car, logs)
+        with open(pdf_path, "rb") as f:
+            await context.bot.send_document(chat_id=uid, document=f, filename="EV_Trip_Log.pdf", 
+                                          caption="📜 Your EV Trip & Battery Log")
+        os.remove(pdf_path)
 
 # ================================================================
 # REGISTRATION
@@ -442,8 +459,9 @@ async def history(u: Update, c: ContextTypes.DEFAULT_TYPE):
             ("\n<i>⭐ Premium: မှတ်တမ်း အကန့်အသတ်မဲ့</i>" if lang=="MM"
              else "\n<i>⭐ Premium: Unlimited history</i>"))
     title = "📜 <b>Battery မှတ်တမ်း</b>" if lang=="MM" else "📜 <b>Battery History</b>"
+    kb = [[InlineKeyboardButton("📜 Export PDF (Premium)", callback_data="export_pdf")], back_row(lang)]
     await msg_obj.reply_html(title + note + "\n\n" + utils.format_logs_chart(logs),
-                              reply_markup=back_button(lang))
+                              reply_markup=InlineKeyboardMarkup(kb))
 
 # ================================================================
 # FIND STATION — FIXED
@@ -1020,10 +1038,52 @@ async def tips(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid)
     msg_obj = u.callback_query.message if u.callback_query else u.message
-    msg = ("💡 <b>EV Tips:</b>\n\n• 🟢 Battery 20%-80%\n• 🌙 Off-peak မှာ အားသွင်းပါ\n• ❄️ အအေးမှာ range ကျနိုင်\n• ⚡ DC Fast Charge မကြာမကြာ မသုံးပါနဲ့"
+    
+    kb = [
+        [InlineKeyboardButton("🔋 Battery Care", callback_data="tip_battery"),
+         InlineKeyboardButton("⚡ Charging", callback_data="tip_charging")],
+        [InlineKeyboardButton("🛣️ Driving Range", callback_data="tip_range"),
+         InlineKeyboardButton("💰 Savings", callback_data="tip_savings")],
+        back_row(lang)
+    ]
+    
+    msg = ("💡 <b>EV Knowledge Base</b>\n\nဗဟုသုတ ဆောင်းပါးများကို အောက်ပါ Menu တွင် ရွေးချယ်ဖတ်ရှုနိုင်ပါသည်။"
            if lang == "MM" else
-           "💡 <b>EV Tips:</b>\n\n• 🟢 Keep battery 20%-80%\n• 🌙 Charge during off-peak\n• ❄️ Cold reduces range\n• ⚡ Avoid frequent DC Fast Charging")
-    await msg_obj.reply_html(msg, reply_markup=back_button(lang))
+           "💡 <b>EV Knowledge Base</b>\n\nSelect a topic below to read helpful EV tips.")
+    
+    if u.callback_query:
+        await msg_obj.edit_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+    else:
+        await msg_obj.reply_html(msg, reply_markup=InlineKeyboardMarkup(kb))
+
+async def tip_detail(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    query = u.callback_query
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    data = query.data
+    
+    tips_data = {
+        "tip_battery": {
+            "MM": "🔋 <b>Battery Care</b>\n\n1. 20%-80% ကြားထားပါ - Lithium-ion battery တွေဟာ 0% ရောက်တာ ဒါမှမဟုတ် 100% အမြဲရှိနေတာကို မကြိုက်ပါဘူး။\n2. အပူလွန်ကဲတာ ရှောင်ပါ - နေပူထဲမှာ ကားကို အကြာကြီး ရပ်မထားပါနဲ့။\n3. အားအပြည့်သွင်းပြီးရင် ချက်ချင်းသုံးပါ - 100% သွင်းပြီး အကြာကြီး ရပ်ထားတာက battery degradation ဖြစ်စေပါတယ်။",
+            "EN": "🔋 <b>Battery Care</b>\n\n1. Keep it between 20%-80% - Lithium-ion batteries last longer when not fully drained or fully charged.\n2. Avoid extreme heat - Don't park in direct sunlight for long periods.\n3. Use soon after 100% charge - Don't leave it at 100% for days."
+        },
+        "tip_charging": {
+            "MM": "⚡ <b>Charging Tips</b>\n\n1. AC Charging ကို ပိုသုံးပါ - နေ့စဉ်အားသွင်းဖို့အတွက် AC (Slow/Home) charging က battery အတွက် ပိုကောင်းပါတယ်။\n2. DC Fast Charge ကို လိုအပ်မှသုံးပါ - ခရီးဝေးသွားမှသာ DC ကို သုံးသင့်ပါတယ်။\n3. ညဘက်အားသွင်းပါ - ညဘက်မှာ မီးအားပိုငြိမ်သလို မီတာခ သက်သာတဲ့ စနစ်ရှိရင် ပိုကိုက်ပါတယ်။",
+            "EN": "⚡ <b>Charging Tips</b>\n\n1. Use AC Charging - Home charging is better for daily battery health.\n2. Limit DC Fast Charging - Use it only for long trips.\n3. Charge at night - Grid is more stable and it's often cheaper."
+        },
+        "tip_range": {
+            "MM": "🛣️ <b>Driving Range</b>\n\n1. အရှိန်ကို ထိန်းမောင်းပါ - 80-90 km/h ဟာ EV တွေအတွက် range အကောင်းဆုံး အရှိန်ဖြစ်ပါတယ်။\n2. Regenerative Braking သုံးပါ - ဘရိတ်အုပ်မယ့်အစား အရှိန်လျှော့ပြီး battery ထဲ ပြန်သွင်းပါ။\n3. တာယာလေပေါင် စစ်ပါ - လေပေါင်နည်းရင် range လျော့ပါတယ်။",
+            "EN": "🛣️ <b>Driving Range</b>\n\n1. Maintain steady speed - 80-90 km/h is usually the sweet spot for efficiency.\n2. Use Regenerative Braking - Maximize energy recovery.\n3. Check Tire Pressure - Low pressure increases drag and reduces range."
+        },
+        "tip_savings": {
+            "MM": "💰 <b>Cost Savings</b>\n\n1. အိမ်မှာ အားသွင်းပါ - အများသုံး station တွေထက် အိမ်မှာသွင်းတာက ၃ ဆလောက် ပိုသက်သာပါတယ်။\n2. ပြုပြင်ထိန်းသိမ်းမှု - EV တွေဟာ အင်ဂျင်ဝိုင်လဲစရာမလိုလို့ ဆီကားထက် maintenance ၇၀% ကျော် သက်သာပါတယ်။\n3. မောင်းနှင်မှုမှတ်တမ်း - Bot ရဲ့ Expense Tracker ကို သုံးပြီး လစဉ်ကုန်ကျစရိတ်ကို စောင့်ကြည့်ပါ။",
+            "EN": "💰 <b>Cost Savings</b>\n\n1. Charge at home - It's usually 3x cheaper than public stations.\n2. Maintenance - EVs save 70% on maintenance compared to gas cars.\n3. Track Expenses - Use this bot's Expense Tracker to monitor monthly costs."
+        }
+    }
+    
+    msg = tips_data.get(data, {}).get(lang, "No content.")
+    kb = [[InlineKeyboardButton("🔙 Back to Tips", callback_data="tips")]]
+    await query.message.edit_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
 async def lang_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(u.effective_user.id)
