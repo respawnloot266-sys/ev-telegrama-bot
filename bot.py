@@ -1462,12 +1462,17 @@ async def send_battery_chart(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not logs:
         return await u.callback_query.message.reply_text("No history found", reply_markup=back_button(lang))
     
-    path = visuals.generate_battery_history_chart(uid, logs)
-    if path:
-        await u.callback_query.message.reply_photo(photo=open(path, 'rb'), caption="📊 Battery Level History")
-        os.remove(path)
-    else:
-        await u.callback_query.message.reply_text("Error generating chart", reply_markup=back_button(lang))
+    try:
+        path = visuals.generate_battery_history_chart(uid, logs)
+        if path and os.path.exists(path):
+            with open(path, 'rb') as photo:
+                await u.callback_query.message.reply_photo(photo=photo, caption="📊 Battery Level History")
+            os.remove(path)
+        else:
+            await u.callback_query.message.reply_text("Error generating chart image", reply_markup=back_button(lang))
+    except Exception as e:
+        logger.error(f"Chart error: {e}")
+        await u.callback_query.message.reply_text("Error processing chart", reply_markup=back_button(lang))
 
 async def send_expense_chart(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
@@ -1478,12 +1483,17 @@ async def send_expense_chart(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not expenses:
         return await u.callback_query.message.reply_text("No expenses this month", reply_markup=back_button(lang))
     
-    path = visuals.generate_expense_chart(uid, expenses)
-    if path:
-        await u.callback_query.message.reply_photo(photo=open(path, 'rb'), caption="📊 Monthly Expense Summary")
-        os.remove(path)
-    else:
-        await u.callback_query.message.reply_text("Error generating chart", reply_markup=back_button(lang))
+    try:
+        path = visuals.generate_expense_chart(uid, expenses)
+        if path and os.path.exists(path):
+            with open(path, 'rb') as photo:
+                await u.callback_query.message.reply_photo(photo=photo, caption="📊 Monthly Expense Summary")
+            os.remove(path)
+        else:
+            await u.callback_query.message.reply_text("Error generating chart image", reply_markup=back_button(lang))
+    except Exception as e:
+        logger.error(f"Chart error: {e}")
+        await u.callback_query.message.reply_text("Error processing chart", reply_markup=back_button(lang))
 
 # ================================================================
 # TRIP LOG EXPORT (Premium) — CSV

@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import io
-import os
 
 def generate_expense_chart(uid, expenses):
     """Generate a pie chart for monthly expenses"""
@@ -18,7 +17,7 @@ def generate_expense_chart(uid, expenses):
     
     plt.figure(figsize=(8, 6))
     plt.pie(values, labels=labels, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired.colors)
-    plt.title(f"Monthly Expenses Summary")
+    plt.title("Monthly Expenses Summary")
     
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight')
