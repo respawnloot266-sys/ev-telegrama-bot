@@ -1,5 +1,6 @@
 import os
 import logging
+import html
 from datetime import datetime
 from telegram import (Update, InlineKeyboardButton, InlineKeyboardMarkup,
                        KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove)
@@ -158,10 +159,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.get_or_create_user(uid)
     lang = get_lang(uid)
     car = db.get_active_car(uid)
-    name = update.effective_user.first_name or ""
+    name = html.escape(update.effective_user.first_name or "User")
     plan_badge = "⭐ Premium" if db.is_premium(uid) else "🆓 Free"
     points = db.get_user_points(uid)
+    
     if car:
+        car_name = html.escape(str(car[2]))
+        car_model = html.escape(str(car[3]))
         pct = car[7]
         icon = utils.get_battery_icon(pct)
         bar = utils.format_battery_bar(pct, 15)
@@ -171,7 +175,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                    f"⚡━━━━━━━━━━━━━━━━━━⚡\n\n"
                    f"👋 ကြိုဆိုပါတယ်, <b>{name}</b>!\n"
                    f"🏆 သင်၏ Points: <b>{points}</b>\n\n"
-                   f"🚗 <b>{car[2]}</b> ({car[3]})\n"
+                   f"🚗 <b>{car_name}</b> ({car_model})\n"
                    f"{icon} Battery: <b>{pct}%</b>\n"
                    f"<code>[{bar}]</code>\n\n"
                    f"🔽 <i>ဘာကူညီရမလဲ?</i>")
@@ -181,7 +185,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                    f"⚡━━━━━━━━━━━━━━━━━━⚡\n\n"
                    f"👋 Welcome back, <b>{name}</b>!\n"
                    f"🏆 Your Points: <b>{points}</b>\n\n"
-                   f"🚗 <b>{car[2]}</b> ({car[3]})\n"
+                   f"🚗 <b>{car_name}</b> ({car_model})\n"
                    f"{icon} Battery: <b>{pct}%</b>\n"
                    f"<code>[{bar}]</code>\n\n"
                    f"🔽 <i>How can I help?</i>")
