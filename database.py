@@ -14,9 +14,15 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY,
             language TEXT DEFAULT 'MM',
-            reg_date DATETIME DEFAULT CURRENT_TIMESTAMP
+            reg_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            points INTEGER DEFAULT 0
         )
     """)
+    # Migration: Add points column if it doesn't exist (for existing databases)
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN points INTEGER DEFAULT 0")
+    except:
+        pass
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS cars (

@@ -17,7 +17,7 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ELECTRICITY_RATE_MMK = 200
 
 # ================================================================
@@ -972,7 +972,7 @@ async def ai_chat_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await msg_obj.reply_html(data[0], reply_markup=data[1])
         return ConversationHandler.END
 
-    if not ANTHROPIC_API_KEY:
+    if not GEMINI_API_KEY:
         await msg_obj.reply_text("❌ AI Chat မရနိုင်သေးပါ။" if lang == "MM" else "❌ AI Chat unavailable.")
         return ConversationHandler.END
 
@@ -996,22 +996,29 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
     loading = await u.message.reply_text("🤔 တွေးနေပါသည်..." if lang == "MM" else "🤔 Thinking...")
 
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
         car = db.get_active_car(uid)
         car_ctx = f"User's car: {car[3]}, {car[4]}kWh, {car[5]}km range." if car else ""
+        system_prompt = f"You are an EV expert assistant for Myanmar users. Answer in {'Burmese' if lang=='MM' else 'English'}. Be concise, practical. {car_ctx} Max 150 words."
+        
         history = c.user_data.get("ai_history", [])
+        # Gemini format conversion
+        gemini_history = []
+        for h in history[-6:]:
+            role = "user" if h["role"] == "user" else "model"
+            gemini_history.append({"role": role, "parts": [h["content"]]})
+        
+        chat = model.start_chat(history=gemini_history)
+        response = chat.send_message(f"{system_prompt}\n\nUser Question: {question}")
+        answer = response.text
+
         history.append({"role": "user", "content": question})
-
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=400,
-            system=f"You are an EV expert assistant for Myanmar users. Answer in {'Burmese' if lang=='MM' else 'English'}. Be concise, practical. {car_ctx} Max 150 words.",
-            messages=history[-6:])
-
-        answer = response.content[0].text
         history.append({"role": "assistant", "content": answer})
         c.user_data["ai_history"] = history[-10:]
+        
         await loading.delete()
         await u.message.reply_text(f"🤖 {answer}",
                                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ ထွက်" if lang=="MM" else "❌ Exit", callback_data="back_menu")]]))
