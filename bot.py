@@ -1005,7 +1005,15 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
         car = db.get_active_car(uid)
         car_ctx = f"User's car: {car[3]}, {car[4]}kWh" if car else "No car registered"
-        system_prompt = f"You are an EV expert assistant. Answer in Myanmar language. Context: {car_ctx}"
+        
+        # မြန်မာလို အမှန်ကန်ဆုံး ပြန်ဖြေပေးဖို့ စည်းကမ်းချက်များ သတ်မှတ်ခြင်း
+        system_prompt = (
+            f"You are an EV expert assistant. Context: {car_ctx}. "
+            "Important Rules:\n"
+            "1. Answer ONLY in natural, fluent Myanmar language (Burmese).\n"
+            "2. Never translate 'EV' into strange words like 'အီးဗီး' or 'ကိရိယာ'. Just use 'EV' or 'လျှပ်စစ်ကား'.\n"
+            "3. Keep the tips realistic, helpful, and professional regarding Electric Vehicles (EV charging, battery care, maintenance)."
+        )
 
         # History Formatting for Groq
         history = c.user_data.get("ai_history", [])
@@ -1017,11 +1025,11 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
             
         groq_messages.append({"role": "user", "content": question})
 
-        # Groq API ကို သုံးပြီး စာပြန်ခိုင်းခြင်း
+        # Groq API (Llama 3.3 70B - မြန်မာလို အကောင်းဆုံးမော်ဒယ်) ကို သုံးပြီး စာပြန်ခိုင်းခြင်း
         completion = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
             messages=groq_messages,
-            temperature=0.7
+            temperature=0.5
         )
         
         answer = completion.choices[0].message.content
@@ -1049,6 +1057,7 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     return S_AI_CHAT
+
 
 
 # ================================================================
