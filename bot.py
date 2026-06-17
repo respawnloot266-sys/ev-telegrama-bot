@@ -1000,7 +1000,7 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
         genai.configure(api_key=GEMINI_API_KEY)
         
         # ပိုပြီး တည်ငြိမ်တဲ့ model name ကို သုံးကြည့်ပါ
-        model = genai.GenerativeModel(model_name='models/gemini-1.5-flash')
+        model = genai.GenerativeModel(model_name='models/gemini-2.0-flash')
         
         car = db.get_active_car(uid)
         car_ctx = f"User's car: {car[3]}, {car[4]}kWh, {car[5]}km range." if car else ""
