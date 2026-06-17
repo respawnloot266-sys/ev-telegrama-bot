@@ -995,7 +995,7 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     loading = await u.message.reply_text("🤔 တွေးနေပါသည်..." if lang == "MM" else "🤔 Thinking...")
 
-        try:
+    try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
         
