@@ -999,6 +999,7 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
         from groq import Groq
         import os
 
+        # Railway Variables ထဲက Key ကို ဖတ်ခြင်း
         GROQ_API_KEY = os.getenv("GROQ_API_KEY")
         client = Groq(api_key=GROQ_API_KEY)
 
@@ -1006,6 +1007,7 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
         car_ctx = f"User's car: {car[3]}, {car[4]}kWh" if car else "No car registered"
         system_prompt = f"You are an EV expert assistant. Answer in Myanmar language. Context: {car_ctx}"
 
+        # History Formatting for Groq
         history = c.user_data.get("ai_history", [])
         groq_messages = [{"role": "system", "content": system_prompt}]
         
@@ -1015,6 +1017,7 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
             
         groq_messages.append({"role": "user", "content": question})
 
+        # Groq API ကို သုံးပြီး စာပြန်ခိုင်းခြင်း
         completion = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=groq_messages,
@@ -1023,41 +1026,30 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
         
         answer = completion.choices[0].message.content
         
-        # မင်းရဲ့ မူလကုဒ်ထဲက history ထဲကို အဖြေသိမ်းတဲ့အပိုင်း
-        history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": answer})
-        c.user_data["ai_history"] = history[-10:]
-
-        gemini_history = []
-        for h in history[-6:]:
-            role = "user" if h["role"] == "user" else "model"
-            gemini_history.append({"role": role, "parts": [h["content"]]})
-        
-        # chat start လုပ်တဲ့နေရာမှာ version သတ်မှတ်ချက်ကို ခေတ္တဖယ်ပြီး တိုက်ရိုက်မေးကြည့်ပါ
-        full_prompt = f"{system_prompt}\n\nUser Question: {question}"
-        response = model.generate_content(full_prompt)
-        answer = response.text
-
-
-
+        # Chat History ထဲမှာ အမေးအဖြေ ပြန်သိမ်းခြင်း
         history.append({"role": "user", "content": question})
         history.append({"role": "assistant", "content": answer})
         c.user_data["ai_history"] = history[-10:]
         
+        # Telegram Bot ထဲသို့ စာပြန်ပို့ခြင်း
         await loading.delete()
-        await u.message.reply_text(f"🤖 {answer}",
-                                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ ထွက်" if lang=="MM" else "❌ Exit", callback_data="back_menu")]]))
+        await u.message.reply_text(
+            f"🤖 {answer}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ ထွက်" if lang=="MM" else "❌ Exit", callback_data="back_menu")]])
+        )
 
     except Exception as e:
         logger.error(f"AI error: {e}")
-        await loading.delete()
-        # Error အမှန်ကို Bot ထဲမှာ ပြခိုင်းခြင်း
-        await u.message.reply_text(f"❌ AI Error: {e}",
-                                    reply_markup=get_main_menu(lang))
-
+        if 'loading' in locals() or 'loading' in globals():
+            try:
+                await loading.delete()
+            except:
+                pass
+        await u.message.reply_text(f"❌ AI Error: {e}", reply_markup=get_main_menu(lang))
         return ConversationHandler.END
 
     return S_AI_CHAT
+
 
 # ================================================================
 # CARS / FAVORITES / TIPS / LANG / PREMIUM
