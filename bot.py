@@ -995,31 +995,28 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     loading = await u.message.reply_text("🤔 တွေးနေပါသည်..." if lang == "MM" else "🤔 Thinking...")
 
-    try:
+        try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
-        model_name = os.getenv("GEMINI_MODEL", "gemini-pro")
-        model = genai.GenerativeModel(model_name)
-
+        
+        # ပိုပြီး တည်ငြိမ်တဲ့ model name ကို သုံးကြည့်ပါ
+        model = genai.GenerativeModel(model_name='models/gemini-1.5-flash')
         
         car = db.get_active_car(uid)
         car_ctx = f"User's car: {car[3]}, {car[4]}kWh, {car[5]}km range." if car else ""
         system_prompt = f"You are an EV expert assistant for Myanmar users. Answer in {'Burmese' if lang=='MM' else 'English'}. Be concise, practical. {car_ctx} Max 150 words."
         
         history = c.user_data.get("ai_history", [])
-        # Gemini format conversion
-                # ၁၀၀၉ ကနေ စပြီး အောက်ကအတိုင်း လဲပါ
         gemini_history = []
         for h in history[-6:]:
             role = "user" if h["role"] == "user" else "model"
-            gemini_history.append({
-                "role": role,
-                "parts": [h["content"]]
-            })
-
-        chat = model.start_chat(history=gemini_history)
-        response = chat.send_message(question)
+            gemini_history.append({"role": role, "parts": [h["content"]]})
+        
+        # chat start လုပ်တဲ့နေရာမှာ version သတ်မှတ်ချက်ကို ခေတ္တဖယ်ပြီး တိုက်ရိုက်မေးကြည့်ပါ
+        full_prompt = f"{system_prompt}\n\nUser Question: {question}"
+        response = model.generate_content(full_prompt)
         answer = response.text
+
 
 
         history.append({"role": "user", "content": question})
