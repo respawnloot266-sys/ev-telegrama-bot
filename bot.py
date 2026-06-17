@@ -1451,19 +1451,25 @@ async def visual_charts_menu(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(uid)
     if u.callback_query: await u.callback_query.answer()
     
-    ok, data = check_premium(uid, lang)
-    if not ok:
-        return await u.callback_query.message.reply_html(data[0], reply_markup=data[1])
-        
-    msg = ("📊 <b>Visual Charts</b>\n\nသင့်ရဲ့ EV အသုံးပြုမှု မှတ်တမ်းတွေကို ဇယားများဖြင့် ကြည့်ရှုနိုင်ပါတယ်" 
-           if lang == "MM" else 
-           "📊 <b>Visual Charts</b>\n\nView your EV usage history with charts")
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔋 Battery History Chart", callback_data="chart_battery")],
-        [InlineKeyboardButton("💰 Expense Pie Chart", callback_data="chart_expense")],
-        back_row(lang)
-    ])
-    await u.callback_query.message.edit_text(msg, reply_markup=kb, parse_mode="HTML")
+    # Use reply_html if edit_text fails (common with message consistency)
+    try:
+        ok, data = check_premium(uid, lang)
+        if not ok:
+            return await u.callback_query.message.reply_html(data[0], reply_markup=data[1])
+            
+        msg = ("📊 <b>Visual Charts</b>\n\nသင့်ရဲ့ EV အသုံးပြုမှု မှတ်တမ်းတွေကို ဇယားများဖြင့် ကြည့်ရှုနိုင်ပါတယ်" 
+               if lang == "MM" else 
+               "📊 <b>Visual Charts</b>\n\nView your EV usage history with charts")
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔋 Battery History Chart", callback_data="chart_battery")],
+            [InlineKeyboardButton("💰 Expense Pie Chart", callback_data="chart_expense")],
+            back_row(lang)
+        ])
+        await u.callback_query.message.edit_text(msg, reply_markup=kb, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Visual menu error: {e}")
+        # Fallback to a new message if editing fails
+        await u.callback_query.message.reply_html("📊 Visual Charts Menu", reply_markup=kb)
 
 async def send_battery_chart(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
