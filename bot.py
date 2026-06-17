@@ -996,17 +996,38 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
     loading = await u.message.reply_text("🤔 တွေးနေပါသည်..." if lang == "MM" else "🤔 Thinking...")
 
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        
-        # ပိုပြီး တည်ငြိမ်တဲ့ model name ကို သုံးကြည့်ပါ
-        model = genai.GenerativeModel(model_name='models/gemini-2.0-flash')
-        
+        from groq import Groq
+        import os
+
+        GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+        client = Groq(api_key=GROQ_API_KEY)
+
         car = db.get_active_car(uid)
-        car_ctx = f"User's car: {car[3]}, {car[4]}kWh, {car[5]}km range." if car else ""
-        system_prompt = f"You are an EV expert assistant for Myanmar users. Answer in {'Burmese' if lang=='MM' else 'English'}. Be concise, practical. {car_ctx} Max 150 words."
-        
+        car_ctx = f"User's car: {car[3]}, {car[4]}kWh" if car else "No car registered"
+        system_prompt = f"You are an EV expert assistant. Answer in Myanmar language. Context: {car_ctx}"
+
         history = c.user_data.get("ai_history", [])
+        groq_messages = [{"role": "system", "content": system_prompt}]
+        
+        for h in history[-6:]:
+            role = "user" if h["role"] == "user" else "assistant"
+            groq_messages.append({"role": role, "content": h["content"]})
+            
+        groq_messages.append({"role": "user", "content": question})
+
+        completion = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=groq_messages,
+            temperature=0.7
+        )
+        
+        answer = completion.choices[0].message.content
+        
+        # မင်းရဲ့ မူလကုဒ်ထဲက history ထဲကို အဖြေသိမ်းတဲ့အပိုင်း
+        history.append({"role": "user", "content": question})
+        history.append({"role": "assistant", "content": answer})
+        c.user_data["ai_history"] = history[-10:]
+
         gemini_history = []
         for h in history[-6:]:
             role = "user" if h["role"] == "user" else "model"
