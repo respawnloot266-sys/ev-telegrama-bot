@@ -1026,8 +1026,10 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"AI error: {e}")
         await loading.delete()
-        await u.message.reply_text("❌ Error ဖြစ်သည်။ နောက်မှ စမ်းပါ။" if lang == "MM" else "❌ Error. Try again.",
+        # Error အမှန်ကို Bot ထဲမှာ ပြခိုင်းခြင်း
+        await u.message.reply_text(f"❌ AI Error: {e}",
                                     reply_markup=get_main_menu(lang))
+
         return ConversationHandler.END
 
     return S_AI_CHAT
