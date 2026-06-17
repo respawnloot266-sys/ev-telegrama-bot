@@ -1,5 +1,5 @@
 python-telegram-bot[job-queue]==21.10
 requests==2.31.0
-google-generativeai
+google-generativeai>=0.5.4
 fpdf2
 matplotlib
