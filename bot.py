@@ -998,7 +998,7 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
         
         car = db.get_active_car(uid)
         car_ctx = f"User's car: {car[3]}, {car[4]}kWh, {car[5]}km range." if car else ""
