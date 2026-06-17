@@ -1006,14 +1006,19 @@ async def ai_chat_respond(u: Update, c: ContextTypes.DEFAULT_TYPE):
         
         history = c.user_data.get("ai_history", [])
         # Gemini format conversion
+                # ၁၀၀၉ ကနေ စပြီး အောက်ကအတိုင်း လဲပါ
         gemini_history = []
         for h in history[-6:]:
             role = "user" if h["role"] == "user" else "model"
-            gemini_history.append({"role": role, "parts": [h["content"]]})
-        
+            gemini_history.append({
+                "role": role,
+                "parts": [h["content"]]
+            })
+
         chat = model.start_chat(history=gemini_history)
-        response = chat.send_message(f"{system_prompt}\n\nUser Question: {question}")
+        response = chat.send_message(question)
         answer = response.text
+
 
         history.append({"role": "user", "content": question})
         history.append({"role": "assistant", "content": answer})
