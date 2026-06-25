@@ -1822,9 +1822,9 @@ def main():
     app.add_handler(route_conv)
     app.add_handler(cost_conv)
     app.add_handler(payment_conv)
-    app.add_handler(ai_conv)
     app.add_handler(bhealth_conv)
     app.add_handler(expense_conv)
+    app.add_handler(ai_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.LOCATION, location_handler))
 
